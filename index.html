@@ -79,10 +79,6 @@
         .tag-inmediato { background: #E8F5E9; color: #2E7D32; }
         .tag-preorden { background: #E3F2FD; color: #1565C0; }
 
-        .selector-cantidad { display: flex; align-items: center; justify-content: space-between; background: #f7f7f9; padding: 6px; border-radius: 10px; margin-bottom: 15px; border: 1px solid var(--border); }
-        .selector-cantidad button { background: white; border: 1px solid #ddd; width: 32px; height: 32px; border-radius: 8px; font-weight: bold; font-size: 1.1rem; color: var(--primary); display: flex; align-items: center; justify-content: center; }
-        .selector-cantidad span { font-weight: bold; font-size: 1rem; width: 30px; text-align: center; }
-
         /* Kanban Vendedor */
         .kanban-board { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-top: 20px; }
         .kanban-col { background: #f4f5f7; border-radius: 16px; padding: 15px; min-height: 400px; }
@@ -108,14 +104,10 @@
         .close-btn { position: absolute; top: 20px; right: 20px; background: #f0f0f0; border: none; width: 36px; height: 36px; border-radius: 50%; font-size: 1.4rem; cursor: pointer; color: #555; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
         .close-btn:hover { background: #e0e0e0; color: var(--primary); transform: rotate(90deg); }
 
-        /* ========================================================
-           NUEVO: DISEÑO DEL MODAL DE PUBLICACIÓN Y VISTA PREVIA
-           ======================================================== */
+        /* Modal Publicación XL */
         .modal-content.xl { max-width: 900px; padding: 40px; }
-        
         .modal-crear-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 40px; margin-top: 10px; }
         
-        /* Zona de subida de imagen mejorada */
         .file-upload-box { border: 2px dashed #ccc; border-radius: 16px; padding: 30px 20px; text-align: center; cursor: pointer; background: #fafafa; transition: all 0.3s ease; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
         .file-upload-box:hover { border-color: var(--primary); background: #fff0f1; }
         .file-upload-box.active { border-color: var(--primary); background: #fff0f1; animation: pulseGlow 1.5s infinite; }
@@ -123,17 +115,15 @@
         .file-text { font-weight: 600; color: #555; font-size: 0.95rem; margin: 0; }
         .file-subtext { font-size: 0.8rem; color: #888; margin: 0; }
 
-        /* Contenedor de la Vista Previa */
         .preview-container { background: #f8f9fa; padding: 25px; border-radius: 20px; border: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; justify-content: center; position: sticky; top: 0; }
         .preview-title { font-size: 0.9rem; text-transform: uppercase; letter-spacing: 1px; color: var(--text-muted); font-weight: 700; margin-bottom: 20px; width: 100%; text-align: center; }
         
-        /* Efecto de actualización en la tarjeta previa */
-        .tarjeta.preview-card { transform: scale(1); width: 100%; max-width: 320px; pointer-events: none; /* Evita clics en la vista previa */ }
+        .tarjeta.preview-card { transform: scale(1); width: 100%; max-width: 320px; pointer-events: none; }
         .tarjeta.preview-card.updated { transform: scale(1.05); box-shadow: var(--shadow-lg); border-color: var(--primary); }
 
         @media (max-width: 768px) {
             .modal-crear-grid { grid-template-columns: 1fr; gap: 30px; }
-            .preview-container { order: -1; /* Pone la vista previa arriba en celulares */ padding: 15px; }
+            .preview-container { order: -1; padding: 15px; }
         }
 
         /* Toasts */
@@ -206,7 +196,15 @@
                 </div>
             </div>
 
-            <h3 style="margin-bottom: 5px;">Flujo de Pedidos</h3>
+            <!-- NUEVO: SECCIÓN DE MIS PRODUCTOS PUBLICADOS -->
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border); padding-bottom: 10px; margin-bottom: 20px; margin-top: 30px;">
+                <h3 style="margin: 0;">Mis Productos Publicados</h3>
+            </div>
+            <div class="muro-productos" id="contenedorMisProductos" style="margin-bottom: 40px;">
+                <!-- Aquí se cargarán los productos del vendedor -->
+            </div>
+
+            <h3 style="margin-bottom: 5px; margin-top: 40px;">Flujo de Pedidos</h3>
             <div class="kanban-board">
                 <div class="kanban-col">
                     <div class="kanban-header"><span>🚨 Nuevos</span> <span class="kanban-count" id="countNuevos">0</span></div>
@@ -236,7 +234,7 @@
         </div>
     </div>
 
-    <!-- MODAL PUBLICAR PRODUCTO (CON VISTA PREVIA MEJORADA) -->
+    <!-- MODAL PUBLICAR PRODUCTO -->
     <div id="modalPublicar" class="modal-overlay">
         <div class="modal-content xl">
             <button class="close-btn" onclick="cerrarModalPublicar()">×</button>
@@ -244,12 +242,9 @@
             
             <div class="modal-crear-grid">
                 
-                <!-- COLUMNA IZQUIERDA: FORMULARIO -->
                 <div class="formulario-crear">
-                    
                     <div class="form-group">
                         <label>Sube una foto atractiva</label>
-                        <!-- Selector de fotos arrastrable / clickeable moderno -->
                         <div class="file-upload-box" id="dropAreaFoto" onclick="document.getElementById('foodFoto').click()">
                             <div class="file-icon">📸</div>
                             <p class="file-text" id="txtUploadMsg">Haz clic para buscar foto</p>
@@ -299,12 +294,10 @@
                     <button class="btn-main" id="btnPublicarComida" style="width: 100%; margin-top: 15px; font-size: 1.1rem; padding: 15px;">✨ Publicar Ahora</button>
                 </div>
 
-                <!-- COLUMNA DERECHA: VISTA PREVIA EN TIEMPO REAL -->
                 <div class="preview-container">
                     <div class="preview-title">👀 Vista Previa en Vivo</div>
                     
                     <div class="tarjeta preview-card" id="tarjetaPreview">
-                        <!-- Imagen Previa -->
                         <img src="" id="pvImagen" class="tarjeta-img" style="display: none;">
                         <div class="tarjeta-img" id="pvIconoFondo" style="display:flex;align-items:center;justify-content:center;font-size:3.5rem;background:#EBEBEB;color:#aaa;">🍽️</div>
                         
@@ -354,7 +347,10 @@
 
         let usuarioActual = null;
         let listaMenuCompleta = [];
-        let fotoBase64Temporal = null; // Guarda la foto cargada en memoria
+        let fotoBase64Temporal = null; 
+        
+        // NUEVO: Flag para notificaciones de pedido
+        let primeraCargaPedidos = true; 
 
         // Helpers de UI
         function mostrarToast(mensaje) {
@@ -367,7 +363,7 @@
             cargarSubcategoriasForm();
             verificarSesionGuardada();
             escucharMenuTiempoReal();
-            inicializarLivePreview(); // Inicia los escuchadores (Listeners) para la vista previa
+            inicializarLivePreview();
         };
 
         // Autenticación Básica
@@ -380,7 +376,9 @@
             if (!codigo || !nombre) return;
             usuarioActual = { codigo, nombre };
             localStorage.setItem("zwap_user", JSON.stringify(usuarioActual));
-            cerrarModalAuth(); actualizarNavbarUI(); escucharPedidosVendedor();
+            cerrarModalAuth(); actualizarNavbarUI(); 
+            primeraCargaPedidos = true; // Reiniciar flag al iniciar sesión
+            escucharPedidosVendedor();
             mostrarInicio(); mostrarToast("✅ Sesión iniciada.");
         }
 
@@ -396,7 +394,6 @@
                 document.getElementById("lblNombreEstudiante").innerText = "👋 " + usuarioActual.nombre.split(" ")[0];
                 document.getElementById("btnNavVender").classList.remove("oculto");
                 document.getElementById("btnNavLogout").classList.remove("oculto");
-                // Actualiza nombre en vista previa
                 document.getElementById("pvVendedor").innerText = "👨‍🍳 " + usuarioActual.nombre;
             } else {
                 document.getElementById("btnNavLogin").classList.remove("oculto");
@@ -415,6 +412,7 @@
             document.getElementById("vistaComprador").classList.remove("oculto");
             if(usuarioActual) { document.getElementById("btnNavVender").classList.remove("oculto"); document.getElementById("btnNavComprar").classList.add("oculto"); }
         }
+        
         function cambiarAVendedor() {
             if (!usuarioActual) { abrirModalAuth(); return; }
             document.getElementById("vistaComprador").classList.add("oculto");
@@ -422,11 +420,10 @@
             document.getElementById("vistaVendedor").classList.remove("oculto");
             document.getElementById("btnNavVender").classList.add("oculto");
             document.getElementById("btnNavComprar").classList.remove("oculto");
+            renderizarMisProductos(); // Asegurarnos de pintar los productos propios al entrar
         }
 
-        // ==========================================
-        // LÓGICA DE VISTA PREVIA EN TIEMPO REAL
-        // ==========================================
+        // LÓGICA DE VISTA PREVIA
         function abrirModalPublicar() { document.getElementById('modalPublicar').style.display = 'flex'; animarTarjetaPrevia(); }
         function cerrarModalPublicar() { document.getElementById('modalPublicar').style.display = 'none'; resetFormularioYPreview(); }
         
@@ -438,24 +435,19 @@
 
         function inicializarLivePreview() {
             const inputs = ['foodNombre', 'foodPrecio', 'foodModalidad', 'foodStock', 'foodCatPrincipal'];
-            
             inputs.forEach(id => {
-                document.getElementById(id).addEventListener('input', (e) => {
-                    actualizarDatosPreview();
-                });
+                document.getElementById(id).addEventListener('input', actualizarDatosPreview);
                 if(id.includes('Cat') || id.includes('Mod')) {
                     document.getElementById(id).addEventListener('change', actualizarDatosPreview);
                 }
             });
 
-            // Manejo especial para la subida de fotos y visualización
             document.getElementById("foodFoto").addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
                     const reader = new FileReader();
                     reader.onload = function(evt) {
                         fotoBase64Temporal = evt.target.result;
-                        // Actualizar UI
                         document.getElementById("pvIconoFondo").style.display = "none";
                         document.getElementById("pvImagen").src = fotoBase64Temporal;
                         document.getElementById("pvImagen").style.display = "block";
@@ -520,7 +512,7 @@
         }
 
         // ==========================================
-        // PUBLICAR Y LEER MENÚ
+        // PUBLICAR Y LEER MENÚ (MODIFICADO CON TRY/CATCH/FINALLY)
         // ==========================================
         document.getElementById("btnPublicarComida").addEventListener("click", async () => {
             const nombre = document.getElementById("foodNombre").value.trim();
@@ -533,28 +525,39 @@
 
             btn.innerText = "Subiendo... 🚀"; btn.disabled = true;
 
-            await db.collection("productos").add({
-                nombre, precio: Number(precio), modalidad,
-                stock_disponible: modalidad === "pre-orden" ? 999999 : stockInput,
-                estado: "disponible",
-                categoriaPrincipal: document.getElementById("foodCatPrincipal").value,
-                subcategoria: document.getElementById("foodSubcat").value,
-                imagen: fotoBase64Temporal || "",
-                vendedorCodigo: usuarioActual.codigo, vendedorNombre: usuarioActual.nombre,
-                fecha: new Date()
-            });
+            // NUEVO: Implementación de Try/Catch/Finally para evitar que se quede cargando
+            try {
+                await db.collection("productos").add({
+                    nombre, precio: Number(precio), modalidad,
+                    stock_disponible: modalidad === "pre-orden" ? 999999 : stockInput,
+                    estado: "disponible",
+                    categoriaPrincipal: document.getElementById("foodCatPrincipal").value,
+                    subcategoria: document.getElementById("foodSubcat").value,
+                    imagen: fotoBase64Temporal || "",
+                    vendedorCodigo: usuarioActual.codigo, 
+                    vendedorNombre: usuarioActual.nombre,
+                    fecha: new Date()
+                });
 
-            cerrarModalPublicar();
-            mostrarToast("✨ ¡Platillo publicado en el menú universitario!");
-            btn.innerText = "✨ Publicar Ahora"; btn.disabled = false;
+                cerrarModalPublicar();
+                mostrarToast("✨ ¡Platillo publicado en el menú!");
+            } catch (error) {
+                console.error("Error al publicar:", error);
+                mostrarToast("❌ Ocurrió un error al intentar publicar.");
+            } finally {
+                // Esto asegura que el botón se libere pase lo que pase
+                btn.innerText = "✨ Publicar Ahora"; 
+                btn.disabled = false;
+            }
         });
 
-        // Lectura y pintado de menú (versión simplificada de lo anterior)
+        // Lectura de menú en tiempo real
         function escucharMenuTiempoReal() {
             db.collection("productos").orderBy("fecha", "desc").onSnapshot((snapshot) => {
                 listaMenuCompleta = [];
                 snapshot.forEach(doc => listaMenuCompleta.push({ id: doc.id, ...doc.data() }));
                 filtrarMenu();
+                renderizarMisProductos(); // NUEVO: Actualiza la lista del vendedor al mismo tiempo
             });
         }
 
@@ -597,17 +600,83 @@
             });
         }
 
-        // Lógica de Compra y Kanban resumida
+        // NUEVO: Función para renderizar los productos que el vendedor ya ha publicado
+        function renderizarMisProductos() {
+            const contenedor = document.getElementById("contenedorMisProductos");
+            if (!contenedor || !usuarioActual) return;
+            contenedor.innerHTML = "";
+
+            // Filtra solo los productos de este usuario
+            const misProds = listaMenuCompleta.filter(p => p.vendedorCodigo === usuarioActual.codigo);
+
+            if (misProds.length === 0) {
+                contenedor.innerHTML = "<p style='color:var(--text-muted); grid-column: 1/-1;'>Aún no tienes platillos publicados. ¡Anímate a publicar el primero!</p>";
+                return;
+            }
+
+            misProds.forEach(p => {
+                const imgTag = p.imagen ? `<img src="${p.imagen}" class="tarjeta-img">` : `<div class="tarjeta-img" style="display:flex;align-items:center;justify-content:center;font-size:3rem;background:#f0f0f0;">${p.categoriaPrincipal==='Comida'?'🍽️':'🥤'}</div>`;
+                const esPreorden = p.modalidad === "pre-orden";
+                const bMod = esPreorden ? `<span class="badge tag-preorden">📅 Pre-orden</span>` : `<span class="badge tag-inmediato">🎒 Inmediato</span>`;
+
+                contenedor.innerHTML += `
+                    <div class="tarjeta">
+                        ${imgTag}
+                        <div class="tarjeta-body">
+                            <div class="badges-wrap"><span class="badge">${p.categoriaPrincipal}</span>${bMod}</div>
+                            <h3 style="margin: 5px 0;">${p.nombre}</h3>
+                            <div style="display:flex; justify-content:space-between; align-items:center;">
+                                <div class="precio">$${p.precio}</div>
+                                <span style="font-size:0.8rem; color:${esPreorden?'#1565C0':'#2E7D32'};">${esPreorden?'∞ Ilimitado':'Quedan '+p.stock_disponible}</span>
+                            </div>
+                        </div>
+                        <div style="padding: 0 20px 20px 20px;">
+                            <button class="btn-secondary" style="width:100%; border-color:#FF5A5F; color:#FF5A5F;" onclick="eliminarMiProducto('${p.id}')">🗑️ Eliminar</button>
+                        </div>
+                    </div>`;
+            });
+        }
+
+        // NUEVO: Función para eliminar un producto del vendedor
+        async function eliminarMiProducto(id) {
+            if(confirm("¿Estás seguro de que deseas eliminar este platillo del menú?")) {
+                try {
+                    await db.collection("productos").doc(id).delete();
+                    mostrarToast("🗑️ Platillo eliminado con éxito.");
+                } catch(error) {
+                    mostrarToast("❌ Hubo un error al eliminar.");
+                }
+            }
+        }
+
+        // Lógica de Compra y Kanban
         function comprar(id, nom, pre, vCod) {
             if(!usuarioActual) { abrirModalAuth(); return; }
-            if(vCod === usuarioActual.codigo) { mostrarToast("No puedes comprar tu producto"); return; }
+            if(vCod === usuarioActual.codigo) { mostrarToast("No puedes comprar tu propio producto"); return; }
             db.collection("pedidos").add({ productoId: id, productoNombre: nom, cantidad: 1, precioTotal: pre, compradorCodigo: usuarioActual.codigo, compradorNombre: usuarioActual.nombre, vendedorCodigo: vCod, estado: "Pendiente", fecha: new Date() });
             mostrarToast("Pedido enviado a cocina 🧑‍🍳");
         }
 
         function escucharPedidosVendedor() {
             if(!usuarioActual) return;
+            
             db.collection("pedidos").where("vendedorCodigo", "==", usuarioActual.codigo).orderBy("fecha","desc").onSnapshot(snap => {
+                
+                // NUEVO: Alerta visual si entra un pedido nuevo (para que te des cuenta)
+                let hayPedidoNuevoAlert = false;
+                snap.docChanges().forEach(change => {
+                    if (change.type === "added" && !primeraCargaPedidos) {
+                        if (change.doc.data().estado === "Pendiente") {
+                             hayPedidoNuevoAlert = true;
+                        }
+                    }
+                });
+                
+                if (hayPedidoNuevoAlert) {
+                    mostrarToast("🚨 ¡Tienes un nuevo pedido entrante!");
+                    // Opcional: Podrías añadir un sonido aquí
+                }
+
                 const kbN = document.getElementById("kb-nuevos"), kbP = document.getElementById("kb-proceso"), kbE = document.getElementById("kb-entregados");
                 kbN.innerHTML=""; kbP.innerHTML=""; kbE.innerHTML="";
                 let cN=0, cP=0, cE=0, ventas=0;
@@ -621,10 +690,17 @@
                     else if (p.estado === "Preparando" || p.estado === "Listo") { cP++; kbP.innerHTML += `<div class="ticket-pedido proceso">${tk}<div class="t-actions"><button class="btn-secondary" onclick="cambiarEstatus('${id}','Entregado')">Entregar</button></div></div>`; }
                     else if (p.estado === "Entregado") { cE++; kbE.innerHTML += `<div class="ticket-pedido entregado">${tk}</div>`; }
                 });
-                document.getElementById("countNuevos").innerText = cN; document.getElementById("countProceso").innerText = cP; document.getElementById("countEntregados").innerText = cE;
-                document.getElementById("dashGanancias").innerText = `$${ventas.toFixed(2)}`; document.getElementById("dashPendientes").innerText = cN+cP;
+                
+                document.getElementById("countNuevos").innerText = cN; 
+                document.getElementById("countProceso").innerText = cP; 
+                document.getElementById("countEntregados").innerText = cE;
+                document.getElementById("dashGanancias").innerText = `$${ventas.toFixed(2)}`; 
+                document.getElementById("dashPendientes").innerText = cN+cP;
+
+                primeraCargaPedidos = false; // Marcar que la carga inicial terminó
             });
         }
+        
         async function cambiarEstatus(id, neo) { await db.collection("pedidos").doc(id).update({ estado: neo }); }
 
     </script>
