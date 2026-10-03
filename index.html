@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zwap Food - Mercado Gastronómico Universitario</title>
+    
+    <!-- Firebase SDK Compat -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+
+    <style>
+        :root {
+            --primary: #ff5722;
+            --primary-hover: #e64a19;
+            --bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --success: #2e7d32;
+            --dark: #1a1a1a;
+        }
+
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: var(--bg); margin: 0; padding: 20px; color: #333; }
+        
+        /* Pantalla de Login */
+        .auth-container { max-width: 400px; margin: 60px auto; background: white; padding: 30px; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.08); text-align: center; }
+        .auth-container h2 { color: var(--primary); margin-bottom: 5px; }
+        
+        /* Encabezado Principal */
+        .header { display: flex; justify-content: space-between; align-items: center; max-width: 1100px; margin: 0 auto 20px auto; background: white; padding: 15px 25px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.04); }
+        .header h1 { color: var(--primary); margin: 0; font-size: 1.8rem; }
+        .user-info { font-size: 0.9rem; color: #666; }
+        
+        /* Selector de Rol / Navegación */
+        .role-switch { display: flex; justify-content: center; gap: 10px; margin-bottom: 25px; }
+        .role-btn { background: #e0e0e0; border: none; padding: 12px 24px; border-radius: 25px; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 0.95rem; }
+        .role-btn.active-role { background: var(--primary); color: white; }
+
+        .container { max-width: 1100px; margin: 0 auto; }
+        .vistas { display: flex; gap: 25px; flex-wrap: wrap; }
+        .oculto { display: none !important; }
+
+        /* Estilos de Formulario e Inputs */
+        input, select { width: 100%; padding: 11px; margin: 8px 0 16px 0; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        button.btn-main { background-color: var(--primary); color: white; border: none; padding: 12px; width: 100%; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        button.btn-main:hover { background-color: var(--primary-hover); }
+
+        /* Tarjetas de Menú / Productos */
+        .muro-productos { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 20px; width: 100%; }
+        .tarjeta { background: var(--card-bg); border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); display: flex; flex-direction: column; justify-content: space-between; border: 1px solid #eee; transition: transform 0.2s; }
+        .tarjeta:hover { transform: translateY(-4px); }
+        .tarjeta-img { width: 100%; height: 150px; object-fit: cover; background-color: #f0f0f0; }
+        .tarjeta-body { padding: 15px; }
+        .precio { color: var(--success); font-weight: bold; font-size: 1.3rem; margin: 5px 0; }
+        .badge { display: inline-block; background: #fff3e0; color: #e65100; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .subbadge { display: inline-block; background: #f5f5f5; color: #666; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; margin-left: 4px; }
+        .badge-modalidad { display: inline-block; padding: 3px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: bold; margin-top: 6px; }
+        .tag-inmediato { background: #e8f5e9; color: #2e7d32; }
+        .tag-preorden { background: #e3f2fd; color: #1565c0; }
+        .stock-tag { font-size: 0.8rem; font-weight: bold; margin-top: 5px; color: #d32f2f; }
+
+        /* Selector de Cantidad en Tarjeta */
+        .selector-cantidad { display: flex; align-items: center; justify-content: space-between; background: #f1f3f5; padding: 6px 10px; border-radius: 8px; margin: 10px 0; }
+        .selector-cantidad button { background: #fff; border: 1px solid #ccc; width: 28px; height: 28px; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 1rem; }
+        .selector-cantidad span { font-weight: bold; font-size: 0.95rem; }
+
+        /* Dashboard de Vendedor */
+        .dashboard-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .dash-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); border-left: 5px solid var(--primary); }
+        .dash-card h4 { margin: 0 0 5px 0; color: #666; font-size: 0.85rem; }
+        .dash-card .val { font-size: 1.5rem; font-weight: bold; color: var(--dark); }
+
+        .tabla-pedidos { width: 100%; border-collapse: collapse; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .tabla-pedidos th, .tabla-pedidos td { padding: 14px; text-align: left; border-bottom: 1px solid #eee; }
+        .tabla-pedidos th { background: #fafafa; color: #666; font-size: 0.85rem; text-transform: uppercase; }
+        .estado-p { padding: 4px 10px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; }
+        .estado-Pendiente { background: #fff8e1; color: #f57f17; }
+        .estado-Preparando { background: #e3f2fd; color: #1976d2; }
+        .estado-Listo { background: #e8f5e9; color: #2e7d32; }
+        .estado-Entregado { background: #f5f5f5; color: #616161; }
+
+        .btn-accion { padding: 8px 12px; border: none; border-radius: 6px; font-size: 0.8rem; cursor: pointer; font-weight: bold; color: white; background: var(--primary); }
+        .btn-accion:disabled { background: #ccc; cursor: not-allowed; }
+
+        /* Modal para Añadir Producto */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; padding: 30px; border-radius: 16px; width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
+        .close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; font-size: 1.8rem; cursor: pointer; color: #999; transition: 0.2s; }
+        .close-btn:hover { color: #333; }
+
+        /* Grid para Mis Productos (Vendedor) */
+        .mis-productos-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 15px; margin-top: 15px; }
+
+        /* Notificaciones Toast */
+        #toastContainer { position: fixed; top: 20px; right: 20px; z-index: 9999; }
+        .toast { background: #323232; color: #fff; padding: 12px 20px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); font-size: 0.9rem; animation: fadeIn 0.3s forwards; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body>
+
+    <div id="toastContainer"></div>
+
+    <!-- PANTALLA 0: AUTENTICACIÓN -->
+    <div id="pantallaAuth" class="auth-container">
+        <h2>🍔 Zwap Food</h2>
+        <p style="color: #666; font-size: 0.9rem;">Ingresa con tu código de estudiante</p>
+        
+        <input type="text" id="authCodigo" placeholder="Código de Estudiante / Matrícula">
+        <input type="text" id="authNombre" placeholder="Tu Nombre Completo">
+        <input type="password" id="authPass" placeholder="Contraseña">
+        
+        <button class="btn-main" onclick="iniciarSesion()">Ingresar a la Plataforma</button>
+    </div>
+
+    <!-- APLICACIÓN PRINCIPAL -->
+    <div id="pantallaApp" class="oculto">
+        
+        <div class="header">
+            <div>
+                <h1>Zwap Food 🍳</h1>
+                <span style="font-size: 0.85rem; color: #777;">Mercado Universitario de Comidas y Bebidas</span>
+            </div>
+            <div class="user-info">
+                Estudiante: <strong id="lblNombreEstudiante">-</strong> (<span id="lblCodigoEstudiante">-</span>)<br>
+                <a href="#" onclick="cerrarSesion()" style="color: var(--primary); font-size: 0.8rem;">Cerrar Sesión</a>
+            </div>
+        </div>
+
+        <!-- SWITCHER DE ROL -->
+        <div class="role-switch">
+            <button class="role-btn active-role" id="btnModoComprador" onclick="cambiarModo('comprador')">🛍️ Interfaz Comprador</button>
+            <button class="role-btn" id="btnModoVendedor" onclick="cambiarModo('vendedor')">👨‍🍳 Interfaz Vendedor</button>
+        </div>
+
+        <div class="container">
+            
+            <!-- INTERFAZ 1: COMPRADOR -->
+            <div id="vistaComprador" class="vistas">
+                <div style="width: 100%;">
+                    
+                    <div style="background: white; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; gap: 15px; flex-wrap: wrap; align-items: center;">
+                        <div style="flex: 1; min-width: 200px;">
+                            <input type="text" id="inputBusqueda" oninput="filtrarMenu()" placeholder="🔍 Buscar chilaquiles, boba tea, brownies..." style="margin:0;">
+                        </div>
+
+                        <select id="filtroCatPrincipal" onchange="actualizarSubfiltros(); filtrarMenu();" style="margin:0; width: auto;">
+                            <option value="Todas">Todas las Categorías</option>
+                            <option value="Comida">Comida 🍲</option>
+                            <option value="Bebidas">Bebidas 🥤</option>
+                        </select>
+
+                        <select id="filtroSubcategoria" onchange="filtrarMenu()" style="margin:0; width: auto;">
+                            <option value="Todas">Todos los estilos</option>
+                        </select>
+                    </div>
+
+                    <h3>Menú Disponible en el Campus</h3>
+                    <div class="muro-productos" id="contenedorMenu"></div>
+
+                    <h3 style="margin-top: 40px;">Mis Pedidos Realizados</h3>
+                    <table class="tabla-pedidos">
+                        <thead>
+                            <tr>
+                                <th>Platillo / Bebida</th>
+                                <th>Cant.</th>
+                                <th>Vendedor</th>
+                                <th>Estado del Pedido</th>
+                                <th>Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contenedorMisPedidos"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- INTERFAZ 2: VENDEDOR -->
+            <div id="vistaVendedor" class="vistas oculto" style="flex-direction: column;">
+                
+                <!-- Dashboard -->
+                <div style="width: 100%;">
+                    <h3>📊 Resumen de tu Negocio Universitario</h3>
+                    <div class="dashboard-grid">
+                        <div class="dash-card">
+                            <h4>Ganancias Estimadas</h4>
+                            <div class="val" id="dashGanancias">$0.00</div>
+                        </div>
+                        <div class="dash-card">
+                            <h4>Pedidos Activos</h4>
+                            <div class="val" id="dashPendientes">0</div>
+                        </div>
+                        <div class="dash-card">
+                            <h4>Lista de Producción Total</h4>
+                            <div class="val" id="dashProduccion" style="font-size: 0.95rem; font-weight: normal; max-height: 80px; overflow-y: auto;">
+                                Sin pedidos pendientes
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sección: Mis Productos Publicados -->
+                <div style="width: 100%; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                        <h3 style="margin: 0;">Mis Platillos Publicados</h3>
+                        <button class="btn-main" style="width: auto; padding: 10px 24px;" onclick="abrirModalPublicar()">+ Añadir Nuevo Producto</button>
+                    </div>
+                    <div class="mis-productos-grid" id="contenedorMisProductosVendedor">
+                        <!-- Los productos del vendedor se cargarán aquí -->
+                    </div>
+                </div>
+
+                <!-- Panel de Gestión de Pedidos Entrantes -->
+                <div style="width: 100%; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+                    <h3 style="margin-top: 0;">Gestión de Comensales y Pedidos Recibidos</h3>
+                    <table class="tabla-pedidos">
+                        <thead>
+                            <tr>
+                                <th>Pedido</th>
+                                <th>Cant.</th>
+                                <th>Comprador</th>
+                                <th>Estado</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contenedorPedidosVendedor"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PARA PUBLICAR NUEVO PRODUCTO -->
+    <div id="modalPublicar" class="modal-overlay">
+        <div class="modal-content">
+            <button class="close-btn" onclick="cerrarModalPublicar()">×</button>
+            <h3 style="margin-top: 0; color: var(--primary);">Publicar en el Menú</h3>
+            
+            <label>Nombre del Platillo / Bebida</label>
+            <input type="text" id="foodNombre" placeholder="Ej. Chilaquiles con Pollo...">
+
+            <label>Precio Unitario ($)</label>
+            <input type="number" id="foodPrecio" placeholder="Ej. 65">
+
+            <label>Modalidad de Venta</label>
+            <select id="foodModalidad" onchange="evaluarModalidadForm()">
+                <option value="inmediato">🎒 Venta Inmediata (Stock limitado)</option>
+                <option value="pre-orden">📅 Pre-orden (Sin límite de stock)</option>
+            </select>
+
+            <div id="divStockContainer">
+                <label>Stock / Unidades disponibles</label>
+                <input type="number" id="foodStock" placeholder="Ej. 15" min="1">
+            </div>
+
+            <div id="divFechaCierre" class="oculto">
+                <label>Cierre de pedidos (Hora límite)</label>
+                <input type="datetime-local" id="foodFechaCierre">
+            </div>
+
+            <label>Categoría Principal</label>
+            <select id="foodCatPrincipal" onchange="cargarSubcategoriasForm()">
+                <option value="Comida">Comida</option>
+                <option value="Bebidas">Bebidas</option>
+            </select>
+
+            <label>Estilo / Subcategoría</label>
+            <select id="foodSubcat"></select>
+
+            <label>Foto de la preparación</label>
+            <input type="file" id="foodFoto" accept="image/*">
+
+            <button class="btn-main" id="btnPublicarComida" style="margin-top: 15px;">Publicar Platillo</button>
+        </div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyCMulJeBpIBgWTbLSLWy2tgVLj20tYiRdw",
+            authDomain: "unimarket-6cdb6.firebaseapp.com",
+            projectId: "unimarket-6cdb6",
+            storageBucket: "unimarket-6cdb6.firebasestorage.app",
+            messagingSenderId: "708590078045",
+            appId: "1:708590078045:web:564cefdba8287a230865b4",
+            measurementId: "G-XBW8PNC2B9"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        const subcategoriasGastronomia = {
+            "Comida": ["Antojitos / Comida Rápida", "Comida Corrida / Platos", "Postres y Snacks"],
+            "Bebidas": ["Aguas Frescas y Jugos", "Café y Té", "Refrescos y Embotellados"]
+        };
+
+        let usuarioActual = null;
+        let listaMenuCompleta = [];
+
+        function mostrarToast(mensaje) {
+            const container = document.getElementById("toastContainer");
+            const toast = document.createElement("div");
+            toast.className = "toast";
+            toast.innerText = mensaje;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3500);
+        }
+
+        /* --- CONTROL DEL MODAL DE PUBLICACIÓN --- */
+        function abrirModalPublicar() {
+            document.getElementById('modalPublicar').style.display = 'flex';
+        }
+        function cerrarModalPublicar() {
+            document.getElementById('modalPublicar').style.display = 'none';
+        }
+        // Cerrar modal al dar click fuera del recuadro blanco
+        document.getElementById('modalPublicar').addEventListener('click', function(e) {
+            if(e.target === this) cerrarModalPublicar();
+        });
+
+        function iniciarSesion() {
+            const codigo = document.getElementById("authCodigo").value.trim();
+            const nombre = document.getElementById("authNombre").value.trim();
+            const pass = document.getElementById("authPass").value.trim();
+
+            if (!codigo || !nombre || !pass) {
+                mostrarToast("⚠️ Completa tu código, nombre y contraseña.");
+                return;
+            }
+
+            usuarioActual = { codigo, nombre };
+            localStorage.setItem("zwap_user", JSON.stringify(usuarioActual));
+            
+            db.collection("estudiantes").doc(codigo).set({
+                codigo: codigo,
+                nombre: nombre,
+                ultimoIngreso: new Date()
+            }, { merge: true });
+
+            cargarInterfazApp();
+        }
+
+        function verificarSesionGuardada() {
+            const sesion = localStorage.getItem("zwap_user");
+            if (sesion) {
+                usuarioActual = JSON.parse(sesion);
+                cargarInterfazApp();
+            }
+        }
+
+        function cerrarSesion() {
+            localStorage.removeItem("zwap_user");
+            location.reload();
+        }
+
+        function cargarInterfazApp() {
+            document.getElementById("pantallaAuth").classList.add("oculto");
+            document.getElementById("pantallaApp").classList.remove("oculto");
+            document.getElementById("lblNombreEstudiante").innerText = usuarioActual.nombre;
+            document.getElementById("lblCodigoEstudiante").innerText = usuarioActual.codigo;
+
+            cargarSubcategoriasForm();
+            escucharMenuTiempoReal();
+            escucharPedidosComprador();
+            escucharPedidosVendedor();
+        }
+
+        function cambiarModo(modo) {
+            const btnComp = document.getElementById("btnModoComprador");
+            const btnVend = document.getElementById("btnModoVendedor");
+            const vistaComp = document.getElementById("vistaComprador");
+            const vistaVend = document.getElementById("vistaVendedor");
+
+            if (modo === 'comprador') {
+                btnComp.classList.add("active-role");
+                btnVend.classList.remove("active-role");
+                vistaComp.classList.remove("oculto");
+                vistaVend.classList.add("oculto");
+            } else {
+                btnVend.classList.add("active-role");
+                btnComp.classList.remove("active-role");
+                vistaVend.classList.remove("oculto");
+                vistaComp.classList.add("oculto");
+                renderizarMisProductosVendedor(); // Cargar productos al abrir vista
+            }
+        }
+
+        function evaluarModalidadForm() {
+            const mod = document.getElementById("foodModalidad").value;
+            const divFc = document.getElementById("divFechaCierre");
+            const divStockContainer = document.getElementById("divStockContainer");
+
+            if (mod === "pre-orden") {
+                divFc.classList.remove("oculto");
+                divStockContainer.classList.add("oculto");
+            } else {
+                divFc.classList.add("oculto");
+                divStockContainer.classList.remove("oculto");
+            }
+        }
+
+        function cargarSubcategoriasForm() {
+            const cat = document.getElementById("foodCatPrincipal").value;
+            const selectSub = document.getElementById("foodSubcat");
+            selectSub.innerHTML = "";
+            subcategoriasGastronomia[cat].forEach(sub => {
+                selectSub.innerHTML += `<option value="${sub}">${sub}</option>`;
+            });
+        }
+
+        function actualizarSubfiltros() {
+            const cat = document.getElementById("filtroCatPrincipal").value;
+            const selectSub = document.getElementById("filtroSubcategoria");
+            selectSub.innerHTML = `<option value="Todas">Todos los estilos</option>`;
+
+            if (cat !== "Todas" && subcategoriasGastronomia[cat]) {
+                subcategoriasGastronomia[cat].forEach(sub => {
+                    selectSub.innerHTML += `<option value="${sub}">${sub}</option>`;
+                });
+            }
+        }
+
+        function comprimirFoto(file) {
+            return new Promise((resolve) => {
+                if (!file) resolve("");
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.src = e.target.result;
+                    img.onload = () => {
+                        const canvas = document.createElement("canvas");
+                        const MAX_W = 600;
+                        let w = img.width;
+                        let h = img.height;
+                        if (w > MAX_W) { h = Math.round((h * MAX_W) / w); w = MAX_W; }
+                        canvas.width = w; canvas.height = h;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL("image/jpeg", 0.7));
+                    };
+                };
+            });
+        }
+
+        document.getElementById("btnPublicarComida").addEventListener("click", async () => {
+            const nombre = document.getElementById("foodNombre").value.trim();
+            const precio = document.getElementById("foodPrecio").value;
+            const modalidad = document.getElementById("foodModalidad").value;
+            const stockInput = parseInt(document.getElementById("foodStock").value) || 0;
+            const fechaCierre = document.getElementById("foodFechaCierre").value;
+            const catPrincipal = document.getElementById("foodCatPrincipal").value;
+            const subcat = document.getElementById("foodSubcat").value;
+            const fotoFile = document.getElementById("foodFoto").files[0];
+            const btn = document.getElementById("btnPublicarComida");
+
+            if (!nombre || !precio) { 
+                mostrarToast("⚠ Ingresa al menos el nombre y el precio."); 
+                return; 
+            }
+
+            if (modalidad === "inmediato" && stockInput <= 0) {
+                mostrarToast("⚠️ Para venta inmediata debes indicar stock disponible.");
+                return;
+            }
+
+            btn.innerText = "Publicando...";
+            const fotoBase64 = await comprimirFoto(fotoFile);
+
+            await db.collection("productos").add({
+                nombre: nombre,
+                precio: Number(precio),
+                modalidad: modalidad,
+                stock_disponible: modalidad === "pre-orden" ? 999999 : stockInput,
+                fecha_cierre: modalidad === "pre-orden" ? fechaCierre : null,
+                estado: "disponible",
+                categoriaPrincipal: catPrincipal,
+                subcategoria: subcat,
+                imagen: fotoBase64,
+                vendedorCodigo: usuarioActual.codigo,
+                vendedorNombre: usuarioActual.nombre,
+                fecha: new Date()
+            });
+
+            // Limpiar formulario y cerrar modal
+            document.getElementById("foodNombre").value = "";
+            document.getElementById("foodPrecio").value = "";
+            document.getElementById("foodStock").value = "";
+            document.getElementById("foodFoto").value = "";
+            btn.innerText = "Publicar Platillo";
+            cerrarModalPublicar();
+            mostrarToast("✅ Platillo publicado con éxito.");
+        });
+
+        function escucharMenuTiempoReal() {
+            db.collection("productos").orderBy("fecha", "desc").onSnapshot((snapshot) => {
+                listaMenuCompleta = [];
+                snapshot.forEach(doc => listaMenuCompleta.push({ id: doc.id, ...doc.data() }));
+                filtrarMenu();
+                
+                // Actualizar la vista de mis productos si el vendedor tiene la vista abierta
+                if (!document.getElementById("vistaVendedor").classList.contains("oculto")) {
+                    renderizarMisProductosVendedor();
+                }
+            });
+        }
+
+        /* --- NUEVA FUNCIÓN: MOSTRAR LOS PRODUCTOS DEL VENDEDOR --- */
+        function renderizarMisProductosVendedor() {
+            if (!usuarioActual) return;
+            const contenedor = document.getElementById("contenedorMisProductosVendedor");
+            contenedor.innerHTML = "";
+            
+            const misProductos = listaMenuCompleta.filter(p => p.vendedorCodigo === usuarioActual.codigo);
+            
+            if (misProductos.length === 0) {
+                contenedor.innerHTML = "<p style='color:#888; grid-column:1/-1;'>Aún no has publicado ningún platillo. ¡Usa el botón de arriba para comenzar!</p>";
+                return;
+            }
+            
+            misProductos.forEach(p => {
+                const imgTag = p.imagen ? `<img src="${p.imagen}" class="tarjeta-img" style="height: 120px;">` : `<div class="tarjeta-img" style="height: 120px; display:flex;align-items:center;justify-content:center;color:#aaa;background:#f5f5f5;">Sin Foto</div>`;
+                const agotado = p.estado === 'agotado' || (p.modalidad === 'inmediato' && p.stock_disponible <= 0);
+                const colorEstado = agotado ? '#d32f2f' : '#2e7d32';
+                const textoEstado = agotado ? 'Agotado' : 'Activo';
+                
+                contenedor.innerHTML += `
+                    <div class="tarjeta" style="border: 1px solid #e0e0e0; box-shadow: none;">
+                        ${imgTag}
+                        <div class="tarjeta-body" style="padding: 12px;">
+                            <h4 style="margin: 0 0 5px 0; font-size: 1rem;">${p.nombre}</h4>
+                            <div style="color: var(--primary); font-weight: bold;">$${p.precio} MXN</div>
+                            <div style="font-size: 0.75rem; color: #666; margin-top: 8px;">
+                                <span style="font-weight:bold; color: ${colorEstado};">● ${textoEstado}</span> 
+                                | ${p.modalidad === 'pre-orden' ? '📅 Pre-orden' : '🎒 Inmediato'}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function filtrarMenu() {
+            const busqueda = document.getElementById("inputBusqueda").value.toLowerCase().trim();
+            const cat = document.getElementById("filtroCatPrincipal").value;
+            const subcat = document.getElementById("filtroSubcategoria").value;
+            const contenedor = document.getElementById("contenedorMenu");
+            contenedor.innerHTML = "";
+
+            let filtrados = listaMenuCompleta.filter(p => {
+                const coincideTexto = p.nombre.toLowerCase().includes(busqueda);
+                const coincideCat = (cat === "Todas" || p.categoriaPrincipal === cat);
+                const coincideSub = (subcat === "Todas" || p.subcategoria === subcat);
+                return coincideTexto && coincideCat && coincideSub;
+            });
+
+            if (filtrados.length === 0) {
+                contenedor.innerHTML = `<p style="color:#888; grid-column:1/-1;">No se encontraron platillos con esos criterios.</p>`;
+                return;
+            }
+
+            filtrados.forEach(p => {
+                const imgTag = p.imagen ? `<img src="${p.imagen}" class="tarjeta-img">` : `<div class="tarjeta-img" style="display:flex;align-items:center;justify-content:center;color:#aaa;">Sin Foto</div>`;
+                
+                const esPreorden = p.modalidad === "pre-orden";
+                const badgeMod = esPreorden 
+                    ? `<span class="badge-modalidad tag-preorden">📅 Pre-orden (Abierta)</span>` 
+                    : `<span class="badge-modalidad tag-inmediato">🎒 Venta Inmediata</span>`;
+
+                const estaAgotado = !esPreorden && (p.stock_disponible <= 0 || p.estado === "agotado");
+                
+                const textoStock = esPreorden 
+                    ? `<div class="stock-tag" style="color:#1565c0;">Pedidos ilimitados</div>` 
+                    : (estaAgotado ? `<div class="stock-tag">❌ AGOTADO</div>` : `<div class="stock-tag" style="color:#2e7d32;">Stock: ${p.stock_disponible} disponibles</div>`);
+
+                let seccionCompra = "";
+                if (estaAgotado) {
+                    seccionCompra = `<button class="btn-accion" style="width:100%;" disabled>Agotado</button>`;
+                } else {
+                    seccionCompra = `
+                        <div class="selector-cantidad">
+                            <button onclick="cambiarCant('${p.id}', -1)">-</button>
+                            <span id="cant_${p.id}">1</span>
+                            <button onclick="cambiarCant('${p.id}', 1, ${esPreorden ? 999999 : p.stock_disponible})">+</button>
+                        </div>
+                        <button class="btn-accion" style="width:100%;" onclick="encargarPlatillo('${p.id}', '${p.nombre}', ${p.precio}, '${p.vendedorCodigo}', '${p.modalidad}', ${p.stock_disponible})">🛒 Pedir</button>
+                    `;
+                }
+
+                contenedor.innerHTML += `
+                    <div class="tarjeta">
+                        <div>
+                            ${imgTag}
+                            <div class="tarjeta-body">
+                                <div>
+                                    <span class="badge">${p.categoriaPrincipal || 'Comida'}</span>
+                                    <span class="subbadge">${p.subcategoria || ''}</span>
+                                </div>
+                                ${badgeMod}
+                                <h4 style="margin: 8px 0 4px 0;">${p.nombre}</h4>
+                                <div class="precio">$${p.precio}</div>
+                                ${textoStock}
+                                <div style="font-size:0.75rem; color:#888; margin-top:5px;">Vendedor: ${p.vendedorNombre} (${p.vendedorCodigo})</div>
+                            </div>
+                        </div>
+                        <div style="padding: 12px;">
+                            ${seccionCompra}
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function cambiarCant(id, cambio, stockMax = 999999) {
+            const span = document.getElementById(`cant_${id}`);
+            let actual = parseInt(span.innerText) + cambio;
+            if (actual < 1) actual = 1;
+            if (actual > stockMax) actual = stockMax;
+            span.innerText = actual;
+        }
+
+        async function encargarPlatillo(productoId, productoNombre, precioUnitario, vendedorCodigo, modalidad, stockActual) {
+            const spanCant = document.getElementById(`cant_${productoId}`);
+            const cantidad = parseInt(spanCant.innerText) || 1;
+
+            if (modalidad === "inmediato") {
+                if (stockActual < cantidad) {
+                    mostrarToast(`❌ Solo hay ${stockActual} unidades disponibles.`);
+                    return;
+                }
+                const nuevoStock = stockActual - cantidad;
+                const nuevoEstado = nuevoStock === 0 ? "agotado" : "disponible";
+
+                await db.collection("productos").doc(productoId).update({
+                    stock_disponible: nuevoStock,
+                    estado: nuevoEstado
+                });
+            }
+
+            await db.collection("pedidos").add({
+                productoId: productoId,
+                productoNombre: productoNombre,
+                cantidad: cantidad,
+                precioTotal: precioUnitario * cantidad,
+                compradorCodigo: usuarioActual.codigo,
+                compradorNombre: usuarioActual.nombre,
+                vendedorCodigo: vendedorCodigo,
+                estado: "Pendiente",
+                fecha: new Date()
+            });
+
+            mostrarToast(`🎉 ¡Pedido de ${cantidad}x ${productoNombre} realizado con éxito!`);
+            spanCant.innerText = "1"; 
+        }
+
+        function escucharPedidosComprador() {
+            db.collection("pedidos")
+                .where("compradorCodigo", "==", usuarioActual.codigo)
+                .onSnapshot((snapshot) => {
+                    const contenedor = document.getElementById("contenedorMisPedidos");
+                    contenedor.innerHTML = "";
+                    snapshot.forEach(doc => {
+                        const ped = doc.data();
+                        const horaStr = ped.fecha ? new Date(ped.fecha.seconds * 1000).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Hoy';
+                        contenedor.innerHTML += `
+                            <tr>
+                                <td><strong>${ped.productoNombre}</strong></td>
+                                <td><span style="background:#eee; padding:3px 8px; border-radius:6px; font-weight:bold;">${ped.cantidad || 1}x</span></td>
+                                <td>Vendedor (${ped.vendedorCodigo})</td>
+                                <td><span class="estado-p estado-${ped.estado}">${ped.estado}</span></td>
+                                <td>${horaStr}</td>
+                            </tr>
+                        `;
+                    });
+                });
+        }
+
+        function escucharPedidosVendedor() {
+            db.collection("pedidos")
+                .where("vendedorCodigo", "==", usuarioActual.codigo)
+                .onSnapshot((snapshot) => {
+                    const contenedor = document.getElementById("contenedorPedidosVendedor");
+                    contenedor.innerHTML = "";
+                    
+                    let totalGanancias = 0;
+                    let contadorPendientes = 0;
+                    const contadorProduccion = {};
+
+                    snapshot.forEach(doc => {
+                        const ped = doc.data();
+                        const id = doc.id;
+                        const cant = ped.cantidad || 1;
+
+                        if (ped.estado !== "Cancelado") {
+                            totalGanancias += (ped.precioTotal || 0);
+                        }
+
+                        if (ped.estado === "Pendiente" || ped.estado === "Preparando") {
+                            contadorPendientes += cant;
+                            contadorProduccion[ped.productoNombre] = (contadorProduccion[ped.productoNombre] || 0) + cant;
+                        }
+                        
+                        let botonSiguiente = "";
+                        if (ped.estado === "Pendiente") botonSiguiente = `<button class="btn-accion" onclick="cambiarEstatus('${id}', 'Preparando')">Aceptar</button>`;
+                        else if (ped.estado === "Preparando") botonSiguiente = `<button class="btn-accion" style="background:#2e7d32;" onclick="cambiarEstatus('${id}', 'Listo')">Listo</button>`;
+                        else if (ped.estado === "Listo") botonSiguiente = `<button class="btn-accion" style="background:#616161;" onclick="cambiarEstatus('${id}', 'Entregado')">Entregar</button>`;
+                        else botonSiguiente = `<span style="color:#aaa; font-size:0.8rem;">Completado</span>`;
+
+                        contenedor.innerHTML += `
+                            <tr>
+                                <td><strong>${ped.productoNombre}</strong></td>
+                                <td><span style="background:#eee; padding:2px 6px; border-radius:4px; font-weight:bold;">${cant}x</span></td>
+                                <td>${ped.compradorNombre} (${ped.compradorCodigo})</td>
+                                <td><span class="estado-p estado-${ped.estado}">${ped.estado}</span></td>
+                                <td>${botonSiguiente}</td>
+                            </tr>
+                        `;
+                    });
+
+                    document.getElementById("dashGanancias").innerText = `$${totalGanancias.toFixed(2)} MXN`;
+                    document.getElementById("dashPendientes").innerText = contadorPendientes;
+
+                    const divProd = document.getElementById("dashProduccion");
+                    const platillosList = Object.keys(contadorProduccion);
+                    if (platillosList.length === 0) {
+                        divProd.innerText = "Sin pedidos pendientes";
+                    } else {
+                        divProd.innerHTML = platillosList.map(nombre => `• <strong>${contadorProduccion[nombre]}x</strong> ${nombre}`).join("<br>");
+                    }
+                });
+        }
+
+        async function cambiarEstatus(pedidoId, nuevoEstado) {
+            await db.collection("pedidos").doc(pedidoId).update({ estado: nuevoEstado });
+            mostrarToast(`Estatus actualizado a: ${nuevoEstado}`);
+        }
+
+        verificarSesionGuardada();
+    </script>
+</body>
+</html>
