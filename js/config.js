@@ -8,7 +8,7 @@
       abre la página con ?demo  →  http://localhost:5173/?demo
    ========================================================= */
 window.APP_CONFIG = {
-  appName: 'CampusMarket',
+  appName: 'Hiusu',
   universityName: 'Mi Universidad',
 
   firebase: {
@@ -31,7 +31,13 @@ window.APP_CONFIG = {
   // Código de país que se agrega a los números de WhatsApp de 10 dígitos o menos (ej. '52' México, '54' Argentina).
   whatsappCountryCode: '',
 
+  // Métodos de pago posibles. Cada vendedor elige cuáles acepta en su perfil o en cada publicación.
   paymentMethods: ['Efectivo', 'Transferencia'],
+
+  // ImgBB: las fotos se suben ahí y en Firebase solo se guarda el enlace.
+  // Ojo: esta clave queda visible en el código de la página (cualquiera podría usarla para subir fotos a tu cuenta de ImgBB).
+  // Déjala vacía ('') para guardar las fotos comprimidas dentro de Firestore.
+  imgbbKey: '5739458d5f0480bd110d767cd9e20940',
 
   // Sonido y vibración cuando llega un pedido nuevo (cada usuario puede apagarlo en su perfil)
   orderSound: true,

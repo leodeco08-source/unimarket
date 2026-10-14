@@ -1,5 +1,5 @@
 /* =========================================================
-   CampusMarket · interfaz (SPA con rutas por #hash)
+   Hiusu · interfaz (SPA con rutas por #hash)
    #/               catálogo (público)
    #/p/:id          detalle de producto (público)
    #/vender         nueva publicación (requiere sesión)
@@ -66,6 +66,29 @@
       });
     } catch {}
   }
+  const PAY_ICON = { Efectivo: '💵', Transferencia: '🏦' };
+  const payLabel = x => `${PAY_ICON[x] || '💳'} ${x}`;
+  // Métodos que acepta una publicación (las antiguas sin dato aceptan todos).
+  const payList = p => {
+    const l = (p && p.payments || []).filter(x => C.paymentMethods.includes(x));
+    return l.length ? l : C.paymentMethods.slice();
+  };
+  const defaultPayments = () => payList(state.profile);
+
+  // Sube una imagen (dataURL) a ImgBB y devuelve { url, thumb }.
+  async function uploadImgbb(dataUrl) {
+    const body = new FormData();
+    body.append('image', dataUrl.split(',')[1]);
+    let res;
+    try { res = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(C.imgbbKey)}`, { method: 'POST', body }); }
+    catch { throw new Error('No se pudo conectar con ImgBB. Revisa tu internet.'); }
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.success) throw new Error('ImgBB rechazó la foto' + (json.error && json.error.message ? `: ${json.error.message}` : '.'));
+    const d = json.data;
+    return { url: d.display_url || d.url, thumb: (d.medium && d.medium.url) || d.display_url || d.url };
+  }
+  const isData = src => /^data:/.test(src);
+
   const media = p => p.thumb || p.productThumb
     ? `<img src="${esc(p.thumb || p.productThumb)}" alt="" loading="lazy">`
     : `<span class="ph-emoji">${cat(p.category).emoji}</span>`;
@@ -96,6 +119,7 @@
     star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
   };
   const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
+  const LOGO = '<svg class="logo-svg" viewBox="0 0 64 44" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4"><path d="M6 13h9M3 20h15M10 27h10"/><path d="M19 38h40"/></g><circle cx="40" cy="9" r="4" fill="currentColor"/><path d="M21 32a19 19 0 0 1 38 0z" fill="currentColor"/><path class="shine" d="M45 17a14 14 0 0 1 7 10" fill="none" stroke-width="3" stroke-linecap="round"/></svg>';
   const GOOGLE = '<svg class="ic" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="m6.3 14.7 6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-7.9l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>';
 
   const STATUS = {
@@ -240,7 +264,7 @@
     const m = openModal(`
       <div class="auth">
         <div class="auth-head">
-          <span class="logo-mark lg">🛍️</span>
+          <span class="logo-mark lg">${LOGO}</span>
           <h2>Bienvenido a ${esc(C.appName)}</h2>
           <p class="muted">${esc(R[reason] || 'Inicia sesión o crea tu cuenta.')}</p>
         </div>
@@ -509,6 +533,7 @@
     const f = state.filter;
     view.innerHTML = `
       <section class="hero">
+        <span class="hero-art">${LOGO}</span>
         <div class="hero-inner">
           <span class="eyebrow">${esc(C.universityName)}</span>
           <h1>Compra y vende <span class="hl">dentro del campus</span></h1>
@@ -631,6 +656,7 @@
               ${p.spot ? `<li>${icon('pin')}<div><small>Entrega en</small><strong>${esc(p.spot)}</strong></div></li>` : ''}
               ${p.schedule ? `<li>${icon('clock')}<div><small>Horario</small><strong>${esc(p.schedule)}</strong></div></li>` : ''}
               <li>${icon('box')}<div><small>Disponibles</small><strong>${isPre(p) ? 'Sobre pedido' : p.stock == null ? 'Sin límite' : soldOut ? 'Agotado' : p.stock}</strong></div></li>
+              <li>${icon('cash')}<div><small>Aceptan</small><strong>${payList(p).map(payLabel).join(' · ')}</strong></div></li>
             </ul>
             ${p.description ? `<div class="desc"><h3>Descripción</h3><p>${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
             <div class="seller-card">
@@ -639,7 +665,8 @@
             </div>
             <div class="buy-bar">
               ${own
-                ? `<a class="btn btn-primary btn-lg grow" href="#/editar/${p.id}">${icon('edit')} Editar publicación</a>`
+                ? `<button type="button" class="btn btn-ghost btn-lg" id="avail">${isPre(p) ? '📅' : '⚡'} Disponibilidad</button>
+                   <a class="btn btn-primary btn-lg grow" href="#/editar/${p.id}">${icon('edit')} Editar</a>`
                 : `<div class="buy-price"><small>Precio</small><strong>${money(p.price)}</strong></div>
                    <button type="button" class="btn btn-primary btn-lg grow" id="buy" ${soldOut || paused ? 'disabled' : ''}>${icon('bag')} ${soldOut ? 'Agotado' : 'Pedir ahora'}</button>
                    ${wa ? `<a class="btn btn-wa btn-lg" target="_blank" rel="noopener" href="${esc(wa)}" aria-label="Escribir por WhatsApp">${icon('chat')}</a>` : ''}`}
@@ -658,7 +685,10 @@
     };
     const buy = $('#buy');
     if (buy) buy.onclick = () => startOrder(p);
-    B.getImages(id).then(imgs => { if (imgs.length && $('.gallery-main')) mountGallery(imgs); }).catch(() => {});
+    const avail = $('#avail');
+    if (avail) avail.onclick = () => quickMode(p, () => renderProduct(p.id));
+    if ((p.images || []).length) mountGallery(p.images);
+    else B.getImages(id).then(imgs => { if (imgs.length && $('.gallery-main')) mountGallery(imgs); }).catch(() => {});
   }
 
   function mountGallery(imgs) {
@@ -701,16 +731,24 @@
         <label class="field"><span>Punto de entrega</span>
           <select name="spot">${spots.map(s => `<option>${esc(s)}</option>`).join('')}</select></label>
         <div class="field"><span>Método de pago</span>
-          <div class="choice">${C.paymentMethods.map((x, i) => `<label><input type="radio" name="pay" value="${esc(x)}" ${i ? '' : 'checked'}><span>${i ? icon('cash') : '💵'} ${esc(x)}</span></label>`).join('')}</div></div>
+          <div class="choice ${payList(p).length === 1 ? 'single' : ''}">${payList(p).map((x, i) => `<label><input type="radio" name="pay" value="${esc(x)}" ${i ? '' : 'checked'}><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
+          ${payList(p).length === 1 ? `<small class="muted">Este vendedor solo acepta ${esc(payList(p)[0].toLowerCase())}.</small>` : ''}</div>
         <label class="field"><span>Tu WhatsApp <em>para que te contacten</em></span>
           <input name="phone" type="tel" inputmode="tel" value="${esc((state.profile && state.profile.phone) || '')}" placeholder="Ej. 5512345678"></label>
         <label class="field"><span>Nota para el vendedor <em>opcional</em></span>
           <textarea name="note" rows="2" maxlength="300" placeholder="Ej. Salgo de clase a las 12, ¿nos vemos en la biblioteca?"></textarea></label>
         <div class="order-total"><span>Total</span><strong id="total">${money(p.price)}</strong></div>
         <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Confirmar pedido</button>
-        <p class="muted small center">Pagas en persona cuando recibas tu producto.</p>
+        <p class="muted small center" id="pay-hint"></p>
       </form>`, { cls: 'modal-sheet' });
     const form = $('form', m.el), F = form.elements;
+    const payHint = () => {
+      $('#pay-hint', m.el).textContent = F.pay.value === 'Transferencia'
+        ? '🏦 Cuando el vendedor acepte tu pedido verás aquí sus datos para transferir.'
+        : 'Pagas en persona cuando recibas tu producto.';
+    };
+    payHint();
+    form.onchange = payHint;
     const sync = () => {
       $('#qty', m.el).textContent = qty;
       $('#total', m.el).textContent = money(p.price * qty);
@@ -773,7 +811,7 @@
   /* ---------------------- crear / editar publicación ---------------------- */
   async function renderEditor(id) {
     view.innerHTML = loader();
-    let p = { title: '', price: '', category: C.categories[0].id, sub: '', mode: 'inmediato', description: '', stock: null, spot: '', schedule: '', phone: (state.profile && state.profile.phone) || '', active: true };
+    let p = { title: '', price: '', category: C.categories[0].id, sub: '', mode: 'inmediato', payments: defaultPayments(), description: '', stock: null, spot: '', schedule: '', phone: (state.profile && state.profile.phone) || '', active: true };
     let images = [];
     if (id) {
       try { p = await B.getProduct(id); } catch { p = null; }
@@ -781,9 +819,13 @@
         view.innerHTML = `<div class="container">${emptyState('🚫', 'No puedes editar esta publicación', 'Solo el vendedor puede editarla.', '<a class="btn btn-primary" href="#/panel/publicaciones">Mis publicaciones</a>')}</div>`;
         return;
       }
-      images = await B.getImages(id).catch(() => []);
+      images = (p.images || []).length ? p.images.slice() : await B.getImages(id).catch(() => []);
       if (!images.length && p.thumb) images = [p.thumb];
     }
+    // Miniatura ya subida de cada foto (para no volver a subirla al guardar).
+    const thumbOf = new Map(images.length && p.thumb ? [[images[0], p.thumb]] : []);
+    let priv = {};
+    B.getPrivate(state.user.uid).then(x => { priv = x || {}; syncPayHint(); }).catch(() => {});
     const MAX_IMG = 4;
     view.innerHTML = `
       <div class="container editor">
@@ -825,6 +867,11 @@
               <label class="field"><span>Punto de entrega</span><input name="spot" list="spots" maxlength="60" placeholder="Ej. Biblioteca"><datalist id="spots">${C.campusSpots.map(s => `<option value="${esc(s)}">`).join('')}</datalist></label>
               <label class="field"><span>Horario</span><input name="schedule" maxlength="60" placeholder="Ej. Lun a Vie, 10:00 a 14:00"></label>
               <label class="field"><span>WhatsApp <em>opcional, para que te escriban</em></span><input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="Ej. 5512345678"></label>
+              <div class="field"><span>Pagos que aceptas *</span>
+                <div class="choice pay-choice">${C.paymentMethods.map(x => `<label><input type="checkbox" name="payments" value="${esc(x)}"><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
+                <small class="muted">Puedes cambiarlo para todas tus publicaciones desde <a class="link" href="#/panel/perfil">tu perfil</a>.</small>
+                <p class="notice warn small" id="pay-hint" hidden>Aún no tienes datos para transferencia. Agrégalos en <a class="link" href="#/panel/perfil">tu perfil</a> para que tus compradores puedan pagarte.</p>
+              </div>
               <label class="switch-row"><div><strong>Publicación activa</strong><small class="muted">Si la pausas, no aparecerá en el catálogo.</small></div>
                 <span class="switch"><input type="checkbox" name="active"><i></i></span></label>
             </section>
@@ -863,6 +910,13 @@
     F.schedule.value = p.schedule || '';
     F.phone.value = p.phone || '';
     F.active.checked = p.active !== false;
+    const pays = payList(p);
+    $$('[name=payments]', form).forEach(x => (x.checked = pays.includes(x.value)));
+    const chosenPays = () => $$('[name=payments]:checked', form).map(x => x.value);
+    function syncPayHint() {
+      const h = $('#pay-hint'); if (!h) return;
+      h.hidden = !(chosenPays().includes('Transferencia') && !(priv.transferInfo || '').trim());
+    }
 
     const collect = () => ({
       title: F.title.value.trim(),
@@ -875,6 +929,7 @@
       spot: F.spot.value.trim(),
       schedule: F.schedule.value.trim(),
       phone: F.phone.value.trim(),
+      payments: chosenPays(),
       active: F.active.checked,
     });
     const preview = () => {
@@ -921,6 +976,7 @@
     form.onchange = e => {
       if (e.target.name === 'category') fillSubs('');
       if (e.target.name === 'mode') syncMode();
+      if (e.target.name === 'payments') syncPayHint();
       preview(); pulse();
     };
     drawUp();
@@ -936,21 +992,42 @@
       errEl.hidden = true;
       if (d.title.length < 3) return fail('Escribe un título de al menos 3 letras.', F.title);
       if (d.price === '' || !(d.price >= 0)) return fail('Escribe un precio válido.', F.price);
-      busy($('[data-submit]', form), async () => {
+      if (!d.payments.length) return fail('Elige al menos un método de pago.');
+      const submit = $('[data-submit]', form);
+      busy(submit, async () => {
         try {
-          const thumb = images[0] ? await compressImage(images[0], 420, 0.7) : '';
+          let thumb = '', urls = null;
+          if (C.imgbbKey) {
+            // Sube solo las fotos nuevas a ImgBB; Firebase guarda únicamente los enlaces.
+            urls = [];
+            const pending = images.filter(isData).length;
+            let done = 0;
+            for (const src of images) {
+              if (isData(src)) {
+                fail(`Subiendo fotos ${++done}/${pending}…`); errEl.classList.add('info');
+                const r = await uploadImgbb(src);
+                urls.push(r.url); thumbOf.set(r.url, r.thumb);
+              } else urls.push(src);
+            }
+            errEl.hidden = true; errEl.classList.remove('info');
+            images = urls;
+            thumb = urls[0] ? (thumbOf.get(urls[0]) || urls[0]) : '';
+          } else {
+            thumb = images[0] ? await compressImage(images[0], 420, 0.7) : '';
+          }
           const data = { ...d, thumb, sellerId: state.user.uid, sellerName: myName(), sellerPhoto: state.user.photo || '' };
+          if (urls) data.images = urls;
           let pid = id;
           if (id) await B.updateProduct(id, data);
           else pid = await B.createProduct(data);
-          await B.setImages(pid, images, state.user.uid);
+          if (!urls) await B.setImages(pid, images, state.user.uid);
           if (d.phone && state.profile && !state.profile.phone) {
             state.profile.phone = d.phone;
             B.saveProfile(state.user.uid, { phone: d.phone }).catch(() => {});
           }
           toast(id ? 'Cambios guardados ✨' : '¡Publicado! Ya aparece en el catálogo 🎉');
           location.hash = id ? '#/panel/publicaciones' : `#/p/${pid}`;
-        } catch (err) { console.error(err); fail(errMsg(err)); }
+        } catch (err) { console.error(err); errEl.classList.remove('info'); fail(errMsg(err)); }
       });
     };
   }
@@ -1054,7 +1131,10 @@
             <a class="pr-thumb" href="#/p/${p.id}" style="--c:${cat(p.category).color}">${media(p)}</a>
             <div class="pr-info">
               <a href="#/p/${p.id}" class="pr-title">${esc(p.title)}</a>
-              <div class="pr-meta"><b>${money(p.price)}</b><span>${p.stock == null ? 'Sin límite' : p.stock === 0 ? '<em class="txt-danger">Agotado</em>' : `${p.stock} disp.`}</span><span>${count(p.id)} ${count(p.id) === 1 ? "pedido" : "pedidos"}</span></div>
+              <div class="pr-meta"><b>${money(p.price)}</b>
+                <button type="button" class="mode-pill ${isPre(p) ? 'pre' : 'now'}" data-quick-mode="${p.id}" title="Cambiar modalidad y disponibles">
+                  ${isPre(p) ? '📅 Pre-orden' : `⚡ ${p.stock == null ? 'Inmediato' : p.stock === 0 ? 'Agotado' : `${p.stock} listos`}`} <span aria-hidden="true">▾</span></button>
+                <span>${count(p.id)} ${count(p.id) === 1 ? 'pedido' : 'pedidos'}</span></div>
             </div>
             <label class="switch" title="${p.active === false ? 'Pausada' : 'Activa'}"><input type="checkbox" data-toggle="${p.id}" ${p.active !== false ? 'checked' : ''} aria-label="Activa"><i></i></label>
             <a class="btn-icon" href="#/editar/${p.id}" aria-label="Editar">${icon('edit')}</a>
@@ -1074,9 +1154,61 @@
       } catch (err) { t.checked = !active; toast(errMsg(err), 'err'); }
     };
     el.onclick = async e => {
+      const qm = e.target.closest('[data-quick-mode]');
+      if (qm) {
+        const p = state.myProducts.find(x => x.id === qm.dataset.quickMode);
+        if (p) quickMode(p, draw);
+        return;
+      }
       const d = e.target.closest('[data-del]'); if (!d) return;
       const p = state.myProducts.find(x => x.id === d.dataset.del);
       if (p && await deleteProduct(p.id, p.title)) draw();
+    };
+  }
+
+  // Cambio rápido: pasar una publicación a "listo para entrega inmediata" (con cuántos hay) o a pre-orden.
+  function quickMode(p, onDone) {
+    let mode = isPre(p) ? 'preorden' : 'inmediato';
+    let stock = p.stock == null ? '' : p.stock;
+    const m = openModal(`
+      <form class="quick-mode" novalidate>
+        <h2>Disponibilidad</h2>
+        <p class="muted small">${esc(p.title)} · el cambio se ve al instante en el catálogo.</p>
+        <div class="choice mode-choice">
+          <label><input type="radio" name="mode" value="inmediato" ${mode === 'inmediato' ? 'checked' : ''}><span>⚡ Inmediato<small>Ya lo tengo listo</small></span></label>
+          <label><input type="radio" name="mode" value="preorden" ${mode === 'preorden' ? 'checked' : ''}><span>📅 Pre-orden<small>Solo sobre pedido</small></span></label>
+        </div>
+        <div class="field" id="qm-stock"><span>¿Cuántos tienes listos?</span>
+          <div class="stepper"><button type="button" data-step="-1" aria-label="Menos">−</button>
+            <input name="stock" type="number" inputmode="numeric" min="0" step="1" placeholder="∞" aria-label="Disponibles">
+            <button type="button" data-step="1" aria-label="Más">+</button></div>
+          <small class="muted">Déjalo vacío si no tiene límite. Al llegar a 0 se marca como agotado.</small>
+        </div>
+        <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Guardar</button>
+      </form>`, { cls: 'modal-sm' });
+    const F = $('form', m.el).elements;
+    F.stock.value = stock;
+    const sync = () => { $('#qm-stock', m.el).hidden = F.mode.value === 'preorden'; };
+    sync();
+    $('form', m.el).onchange = sync;
+    $('.stepper', m.el).onclick = e => {
+      const b = e.target.closest('[data-step]'); if (!b) return;
+      const cur = F.stock.value === '' ? 0 : Number(F.stock.value);
+      F.stock.value = Math.max(0, cur + Number(b.dataset.step));
+    };
+    $('form', m.el).onsubmit = e => {
+      e.preventDefault();
+      mode = F.mode.value;
+      const data = { mode, stock: mode === 'preorden' || F.stock.value === '' ? null : Math.max(0, Math.floor(Number(F.stock.value))) };
+      busy($('[data-submit]', m.el), async () => {
+        try {
+          await B.updateProduct(p.id, data);
+          Object.assign(p, data);
+          m.close();
+          toast(mode === 'preorden' ? 'Ahora es pre-orden 📅' : data.stock == null ? 'Disponible para entrega inmediata ⚡' : `Disponible ya: ${data.stock} listos ⚡`);
+          onDone && onDone();
+        } catch (err) { toast(errMsg(err), 'err'); }
+      });
     };
   }
 
@@ -1112,6 +1244,9 @@
         <div><dt>Total</dt><dd><b>${money(o.total)}</b></dd></div>
       </dl>
       ${o.note ? `<p class="order-note">“${esc(o.note)}”</p>` : ''}
+      ${o.payment === 'Transferencia' && role === 'buyer' && o.status === 'aceptado' ? (o.transferInfo
+        ? `<div class="transfer"><div><small>🏦 Datos para transferir · ${money(o.total)}</small><p>${esc(o.transferInfo).replace(/\n/g, '<br>')}</p></div><button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(o.transferInfo)}">Copiar</button></div>`
+        : '<div class="transfer"><div><small>🏦 Pago por transferencia</small><p>Pídele los datos al vendedor por WhatsApp.</p></div></div>') : ''}
       ${wa || actions ? `<footer>${wa ? `<a class="btn btn-wa btn-sm" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')} WhatsApp</a>` : ''}<span class="grow"></span>${actions}</footer>` : ''}
     </article>`;
   }
@@ -1128,7 +1263,13 @@
     };
     try {
       if (act === 'accept') {
-        await busy(btn, async () => { await B.updateOrder(id, { status: 'aceptado' }); await adjustStock(-o.qty); });
+        let extra = {};
+        if (o.payment === 'Transferencia') {
+          const priv = await B.getPrivate(state.user.uid).catch(() => ({}));
+          if ((priv.transferInfo || '').trim()) extra = { transferInfo: priv.transferInfo.trim() };
+          else toast('No tienes datos de transferencia en tu perfil: envíaselos al comprador por WhatsApp.', 'err', 6000);
+        }
+        await busy(btn, async () => { await B.updateOrder(id, { status: 'aceptado', ...extra }); await adjustStock(-o.qty); });
         toast('Pedido aceptado. ¡Coordina la entrega! ✅');
       } else if (act === 'deliver') {
         await busy(btn, () => B.updateOrder(id, { status: 'entregado' }));
@@ -1151,6 +1292,11 @@
   }
   const bindOrderActions = el => {
     el.onclick = e => {
+      const c = e.target.closest('[data-copy]');
+      if (c) {
+        navigator.clipboard.writeText(c.dataset.copy).then(() => toast('Datos copiados 📋'), () => toast('No se pudo copiar', 'err'));
+        return;
+      }
       const b = e.target.closest('[data-act]');
       if (b) orderAction(b.dataset.act, b.dataset.id, b);
     };
@@ -1256,6 +1402,12 @@
           <label class="field"><span>WhatsApp</span><input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="Ej. 5512345678"></label>
           <label class="field"><span>Facultad / carrera</span><input name="faculty" maxlength="60" placeholder="Ej. Ingeniería en Sistemas"></label>
           <label class="field"><span>Matrícula / código de estudiante <em>opcional, lo ve el vendedor en tus pedidos</em></span><input name="studentCode" maxlength="20" placeholder="Ej. A01234567"></label>
+          <h3 class="sec-gap">💳 Cómo te pagan</h3>
+          <p class="muted small">Los compradores solo podrán elegir lo que marques.</p>
+          <div class="choice pay-choice">${C.paymentMethods.map(x => `<label><input type="checkbox" name="payments" value="${esc(x)}"><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
+          <label class="field" id="transfer-field"><span>Datos para transferencia <em>privado: solo lo ve quien te compre, cuando aceptes su pedido</em></span>
+            <textarea name="transferInfo" rows="3" maxlength="300" placeholder="Ej. BBVA · CLABE 012 345 678901234567&#10;A nombre de Ana López"></textarea></label>
+          <label class="check-row"><input type="checkbox" name="applyAll" checked><span>Aplicar también a todas mis publicaciones</span></label>
           <button class="btn btn-primary" type="submit" data-submit>Guardar perfil</button>
         </form>
         <section class="surface">
@@ -1272,16 +1424,33 @@
     F.phone.value = pr.phone || '';
     F.faculty.value = pr.faculty || '';
     F.studentCode.value = pr.studentCode || '';
+    const pays = defaultPayments();
+    $$('[name=payments]', el).forEach(x => (x.checked = pays.includes(x.value)));
+    const syncTransfer = () => { $('#transfer-field', el).hidden = !$$('[name=payments]', el).some(x => x.checked && x.value === 'Transferencia'); };
+    syncTransfer();
+    $('#pf').onchange = e => { if (e.target.name === 'payments') syncTransfer(); };
+    B.getPrivate(state.user.uid).then(x => { if (!F.transferInfo.value) F.transferInfo.value = (x && x.transferInfo) || ''; }).catch(() => {});
     $('#snd').onchange = e => {
       setPref('sound', e.target.checked);
       if (e.target.checked) { chime(); toast('Sonido activado 🔔', 'info'); }
     };
     $('#pf').onsubmit = e => {
       e.preventDefault();
-      const data = { name: F.name.value.trim() || state.user.name, phone: F.phone.value.trim(), faculty: F.faculty.value.trim(), studentCode: F.studentCode.value.trim() };
+      const payments = $$('[name=payments]:checked', el).map(x => x.value);
+      if (!payments.length) return toast('Elige al menos un método de pago', 'err');
+      const data = { name: F.name.value.trim() || state.user.name, phone: F.phone.value.trim(), faculty: F.faculty.value.trim(), studentCode: F.studentCode.value.trim(), payments };
+      const applyAll = F.applyAll.checked;
       busy($('[data-submit]', el), async () => {
         try {
           await B.saveProfile(state.user.uid, data);
+          await B.savePrivate(state.user.uid, { transferInfo: F.transferInfo.value.trim() });
+          if (applyAll) {
+            const mine = await loadMine(true);
+            const toUpdate = mine.filter(p => payList(p).join() !== payments.join());
+            await Promise.all(toUpdate.map(p => B.updateProduct(p.id, { payments })));
+            toUpdate.forEach(p => (p.payments = payments));
+            if (toUpdate.length) toast(`Pagos actualizados en ${toUpdate.length} ${toUpdate.length === 1 ? 'publicación' : 'publicaciones'}`, 'info');
+          }
           state.profile = { ...pr, ...data };
           renderAccount();
           $('.panel-hello h1').textContent = `Hola, ${myName().split(' ')[0]}`;

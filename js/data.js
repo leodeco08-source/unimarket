@@ -96,6 +96,9 @@
 
       async getProfile(uid) { const d = await col('users').doc(uid).get(); return d.exists ? d.data() : null; },
       saveProfile: (uid, data) => col('users').doc(uid).set(data, { merge: true }),
+      // Ajustes privados (ej. datos bancarios): solo los lee el dueño.
+      async getPrivate(uid) { const d = await col('users').doc(uid).collection('private').doc('settings').get(); return d.exists ? d.data() : {}; },
+      savePrivate: (uid, data) => col('users').doc(uid).collection('private').doc('settings').set(data, { merge: true }),
 
       async listProducts() { return (await col('products').orderBy('createdAt', 'desc').limit(300).get()).docs.map(toObj); },
       watchProducts(cb, onErr) {
@@ -215,6 +218,8 @@
 
       getProfile: async uid => ls.get(K.u, {})[uid] || null,
       async saveProfile(uid, data) { const u = ls.get(K.u, {}); u[uid] = { ...(u[uid] || {}), ...data }; ls.set(K.u, u); },
+      getPrivate: async uid => ls.get('cm_private', {})[uid] || {},
+      async savePrivate(uid, data) { const all = ls.get('cm_private', {}); all[uid] = { ...(all[uid] || {}), ...data }; ls.set('cm_private', all); },
 
       listProducts: () => wait(byNewest(products()), 350),
       watchProducts(cb) {
