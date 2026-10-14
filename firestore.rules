@@ -1,0 +1,68 @@
+rules_version = '2';
+// Pega estas reglas en: Consola de Firebase → Firestore Database → Reglas → Publicar
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function isMe(uid) { return signedIn() && request.auth.uid == uid; }
+    // Para aceptar solo correos de tu universidad, cambia `true` por:
+    //   request.auth.token.email.matches('.*@miuni[.]edu$')
+    function allowedUser() { return signedIn() && true; }
+
+    // Perfil público (nombre, WhatsApp, facultad)
+    match /users/{uid} {
+      allow read: if true;
+      allow write: if isMe(uid) && allowedUser();
+
+      // Ajustes privados del vendedor (datos para transferencia): solo el dueño
+      match /private/{doc} {
+        allow read, write: if isMe(uid);
+      }
+    }
+
+    // Publicaciones: cualquiera puede verlas (sin iniciar sesión)
+    match /products/{id} {
+      allow read: if true;
+      allow create: if allowedUser()
+        && request.resource.data.sellerId == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.title.size() <= 80
+        && request.resource.data.price is number
+        && request.resource.data.price >= 0;
+      allow update: if isMe(resource.data.sellerId)
+        && request.resource.data.sellerId == resource.data.sellerId;
+      allow delete: if isMe(resource.data.sellerId);
+    }
+
+    // Fotos en tamaño completo de cada publicación
+    match /productImages/{id} {
+      allow read: if true;
+      allow create: if allowedUser() && request.resource.data.sellerId == request.auth.uid;
+      allow update: if isMe(resource.data.sellerId) && request.resource.data.sellerId == resource.data.sellerId;
+      allow delete: if isMe(resource.data.sellerId);
+    }
+
+    // Pedidos: solo los ven el comprador y el vendedor
+    match /orders/{id} {
+      allow read: if signedIn()
+        && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
+      allow create: if allowedUser()
+        && request.resource.data.buyerId == request.auth.uid
+        && request.resource.data.sellerId != request.auth.uid
+        && request.resource.data.status == 'pendiente';
+      allow update: if signedIn()
+        && request.resource.data.buyerId == resource.data.buyerId
+        && request.resource.data.sellerId == resource.data.sellerId
+        && (
+          // El vendedor cambia el estado (aceptar, rechazar, entregar, cancelar)
+          resource.data.sellerId == request.auth.uid
+          // El comprador solo puede cancelar mientras esté pendiente
+          || (resource.data.buyerId == request.auth.uid
+              && resource.data.status == 'pendiente'
+              && request.resource.data.status == 'cancelado'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if false;
+    }
+  }
+}
