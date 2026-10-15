@@ -21,6 +21,13 @@ window.APP_CONFIG = {
     measurementId: 'G-XBW8PNC2B9',
   },
 
+  // Compras sin cuenta: el comprador llena sus datos y su pedido se guarda en su dispositivo.
+  // Pon false cuando quieran exigir inicio de sesión para comprar.
+  guestCheckout: true,
+  // A los invitados se les muestra menos info (descripción recortada, 1 foto, sin WhatsApp del vendedor)
+  // para animarlos a iniciar sesión. Pon false para mostrarles todo.
+  limitGuestDetails: true,
+
   // Deja vacío para permitir cualquier correo. Ejemplo: ['miuni.edu', 'alumnos.miuni.edu']
   allowedEmailDomains: [],
 

@@ -37,7 +37,8 @@
 
     const norm = u => u && {
       uid: u.uid,
-      name: u.displayName || (u.email || 'Usuario').split('@')[0],
+      name: u.isAnonymous ? 'Invitado' : u.displayName || (u.email || 'Usuario').split('@')[0],
+      anonymous: !!u.isAnonymous,
       email: u.email || '',
       photo: u.photoURL || '',
       provider: (u.providerData[0] || {}).providerId || 'password',
@@ -47,21 +48,34 @@
       for (const k in x) if (x[k] && typeof x[k].toMillis === 'function') x[k] = x[k].toMillis();
       return { id: d.id, ...x };
     };
+    const authCbs = new Set();
+    const emit = () => authCbs.forEach(cb => cb(norm(auth.currentUser)));
     const ensureDomain = async () => {
       const u = auth.currentUser;
-      if (u && !emailAllowed(u.email)) { await auth.signOut(); throw mkErr('app/domain-not-allowed'); }
+      if (u && !u.isAnonymous && !emailAllowed(u.email)) { await auth.signOut(); throw mkErr('app/domain-not-allowed'); }
     };
+    // Si quien entra venía comprando como invitado, se "vincula" la sesión anónima
+    // a su cuenta para que conserve sus pedidos.
     async function withProvider(provider) {
+      const cur = auth.currentUser;
+      const anon = cur && cur.isAnonymous;
       try {
-        await auth.signInWithPopup(provider);
+        if (anon) {
+          try { await cur.linkWithPopup(provider); }
+          catch (e) {
+            if (e.code === 'auth/credential-already-in-use' && e.credential) await auth.signInWithCredential(e.credential);
+            else throw e;
+          }
+        } else await auth.signInWithPopup(provider);
       } catch (e) {
         // En algunos navegadores móviles los popups están bloqueados: usamos redirección.
-        if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'].includes(e.code)) {
-          return auth.signInWithRedirect(provider);
+        if (['auth/popup-blocked', 'auth/operation-not-supported-in-this-environment'].includes(e.code) && location.protocol !== 'file:') {
+          return anon ? cur.linkWithRedirect(provider) : auth.signInWithRedirect(provider);
         }
         throw e;
       }
       await ensureDomain();
+      emit();
     }
     auth.getRedirectResult().then(ensureDomain).catch(e => console.warn('redirect', e));
 
@@ -70,10 +84,17 @@
     return {
       mode: 'firebase',
       onAuth(cb) {
-        return auth.onAuthStateChanged(u => {
-          if (u && !emailAllowed(u.email)) { auth.signOut(); return; }
+        authCbs.add(cb);
+        // onIdTokenChanged también avisa cuando un invitado se vincula a una cuenta.
+        const off = auth.onIdTokenChanged(u => {
+          if (u && !u.isAnonymous && !emailAllowed(u.email)) { auth.signOut(); return; }
           cb(norm(u));
         });
+        return () => { authCbs.delete(cb); off(); };
+      },
+      async loginAnonymous() {
+        if (auth.currentUser) return norm(auth.currentUser);
+        return norm((await auth.signInAnonymously()).user);
       },
       loginGoogle() {
         const p = new firebase.auth.GoogleAuthProvider();
@@ -86,9 +107,15 @@
       },
       async register(name, email, pass) {
         if (!emailAllowed(email)) throw mkErr('app/domain-not-allowed');
-        const { user } = await auth.createUserWithEmailAndPassword(email, pass);
+        const cur = auth.currentUser;
+        let user;
+        if (cur && cur.isAnonymous) {
+          try { user = (await cur.linkWithCredential(firebase.auth.EmailAuthProvider.credential(email, pass))).user; }
+          catch (e) { throw ['auth/credential-already-in-use', 'auth/email-already-in-use'].includes(e.code) ? mkErr('auth/email-already-in-use') : e; }
+        } else user = (await auth.createUserWithEmailAndPassword(email, pass)).user;
         await user.updateProfile({ displayName: name });
         user.sendEmailVerification().catch(() => {});
+        emit();
         return norm(auth.currentUser);
       },
       resetPassword: email => auth.sendPasswordResetEmail(email),
@@ -149,7 +176,8 @@
     const wait = (v, ms = 200) => new Promise(r => setTimeout(() => r(v), ms));
     const authCbs = new Set();
     const watchers = new Set();
-    let session = ss.get();
+    // El invitado se guarda en el dispositivo (localStorage) para que vea sus pedidos al volver.
+    let session = ss.get() || ls.get('cm_guest_session', null);
     const emit = () => authCbs.forEach(cb => cb(session));
     const productWatchers = new Set();
     const fireOrders = () => watchers.forEach(w => w());
@@ -162,6 +190,12 @@
     const signIn = async u => {
       if (!emailAllowed(u.email)) throw mkErr('app/domain-not-allowed');
       await wait(null, 350);
+      // Igual que en Firebase: los pedidos del invitado pasan a la cuenta con la que entra.
+      if (session && session.anonymous) {
+        ls.set(K.o, ls.get(K.o, []).map(o => (o.buyerId === session.uid ? { ...o, buyerId: u.uid } : o)));
+        try { localStorage.removeItem('cm_guest_session'); } catch {}
+        fireOrders();
+      }
       session = u; ss.set(u); emit();
       return u;
     };
@@ -194,6 +228,14 @@
     return {
       mode: 'demo',
       onAuth(cb) { authCbs.add(cb); setTimeout(() => cb(session), 0); return () => authCbs.delete(cb); },
+      async loginAnonymous() {
+        if (session) return session;
+        await wait(null, 200);
+        session = { uid: 'guest-' + newId(), name: 'Invitado', email: '', photo: '', provider: 'anonymous', anonymous: true };
+        ls.set('cm_guest_session', session);
+        emit();
+        return session;
+      },
       loginGoogle: () => signIn({ uid: 'demo-google', name: 'Estudiante Google', email: demoEmail('estudiante.google'), photo: '', provider: 'google.com' }),
       async loginEmail(email, pass) {
         email = email.toLowerCase();
@@ -214,7 +256,7 @@
         return signIn({ uid: accs[email].uid, name, email, photo: '', provider: 'password' });
       },
       resetPassword: () => wait(),
-      async logout() { session = null; ss.set(null); emit(); },
+      async logout() { session = null; ss.set(null); try { localStorage.removeItem('cm_guest_session'); } catch {} emit(); },
 
       getProfile: async uid => ls.get(K.u, {})[uid] || null,
       async saveProfile(uid, data) { const u = ls.get(K.u, {}); u[uid] = { ...(u[uid] || {}), ...data }; ls.set(K.u, u); },

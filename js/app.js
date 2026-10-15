@@ -89,6 +89,79 @@
   }
   const isData = src => /^data:/.test(src);
 
+  /* ---------------------- invitados ---------------------- */
+  // Con cuenta real (Google o correo). Un invitado tiene una sesión anónima solo para seguir sus pedidos.
+  const loggedIn = () => !!(state.user && !state.user.anonymous);
+  const store = {
+    get(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v ?? d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  };
+  const getGuest = () => store.get('hiusu_guest', {});
+  const setGuest = g => store.set('hiusu_guest', { ...getGuest(), ...g });
+  // Copia de los pedidos hechos en este dispositivo (sin fotos, para no llenar el almacenamiento).
+  const cachedOrders = () => store.get('hiusu_orders', []);
+  function cacheOrder(o) {
+    const { productThumb, ...light } = o;
+    const list = cachedOrders().filter(x => x.id !== o.id);
+    list.unshift({ ...light, productThumb: /^https?:/.test(productThumb || '') ? productThumb : '' });
+    store.set('hiusu_orders', list.slice(0, 50));
+  }
+  function syncCache(live) {
+    const byId = new Map(live.map(o => [o.id, o]));
+    const list = cachedOrders();
+    let changed = false;
+    list.forEach(c => { const l = byId.get(c.id); if (l && l.status !== c.status) { c.status = l.status; c.transferInfo = l.transferInfo; changed = true; } });
+    if (changed) store.set('hiusu_orders', list);
+  }
+
+  /* ---------------------- detector de pedidos falsos ---------------------- */
+  // Revisa el pedido al mostrarlo al vendedor (no se puede falsear desde el navegador del comprador).
+  const plain = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const JUNK_NAMES = /^(test|testing|prueba|pruebas|fake|falso|nombre|name|nadie|anonimo|anon|xd|xdd|asdf|qwerty|ninguno|na|nn|lol|jaja+|hola|aaa+|abc|abcd|usuario|user|yo)$/;
+  const KEYBOARD = /(qwe|asd|sdf|dfg|fgh|ghj|hjk|jkl|zxc|xcv|cvb|vbn|ñlk|lkj|poi)/g;
+  const RARE_PAIRS = /(jd|dj|hj|jk|kj|jg|gj|jz|zj|qw|wq|zx|xz|vb|bv|fv|vf|qz|zq|qj|jq|pq|qp|kq|qk|wx|xw|vw|wv|fj|jf|jv|vj|xj|jx|kz|zk|fk|kf|gk|kg|kd|dk|jp|pj|jm|mj|jt|tj|jw|wj|jb|bj|jc|cj|jl|lj|js|sj|jr|rj|dp|pd|gp|pg|bp|pb|fg|gf|dz|zd|cv|vc|vm|mv|fz|zf|zx)/g;
+  function gibberishWord(w) {
+    let g = 0;
+    if (w.length < 3) return 0;
+    const vowels = (w.match(/[aeiouy]/g) || []).length;
+    // Rachas de consonantes; las que llevan "h" (sch, tch) son normales en apellidos.
+    (w.match(/[^aeiouy]{4,}/g) || []).forEach(r => { g += /h/.test(r) ? (r.length >= 6 ? 1 : 0) : (r.length >= 5 ? 2 : 1); });
+    if (w.length >= 3 && vowels === 0) g += 2;
+    else if (w.length >= 5 && vowels / w.length < 0.2) g += 1;
+    if (w.length >= 5 && vowels / w.length > 0.85) g += 1;
+    if (/(.)\1\1/.test(w)) g += 2;
+    g += (w.match(KEYBOARD) || []).length;
+    g += (w.match(RARE_PAIRS) || []).length;
+    if (/q(?!u)/.test(w)) g += 1;
+    if (w.length >= 14) g += 1;
+    return g;
+  }
+  function fakeCheck(o, all = []) {
+    const strong = [], weak = [], info = [];
+    const name = String(o.buyerName || '').trim();
+    const n = plain(name);
+    const words = n.split(/[\s\-.]+/).filter(Boolean);
+    if (!name) strong.push('Sin nombre');
+    else if (/\d/.test(name)) strong.push('El nombre tiene números');
+    else if (name.replace(/\s/g, '').length < 3) strong.push('Nombre demasiado corto');
+    else if (JUNK_NAMES.test(n.replace(/\s+/g, '')) || words.every(w => JUNK_NAMES.test(w))) strong.push('Nombre de prueba o inventado');
+    else {
+      const scores = words.map(w => gibberishWord(w.replace(/[^a-zñ]/g, '')));
+      if (scores.some(x => x >= 2) || scores.reduce((a, b) => a + b, 0) >= 3) strong.push('El nombre parece escrito al azar');
+      else if (words.length === 1) info.push('Solo un nombre, sin apellido');
+    }
+    const digits = String(o.buyerPhone || '').replace(/\D/g, '');
+    if (!digits) (o.guest ? strong : weak).push('Sin WhatsApp');
+    else if (digits.length < 8 || digits.length > 13) strong.push('WhatsApp inválido');
+    else if (/^(\d)\1+$/.test(digits) || /(\d)\1{6}/.test(digits) || /(01234567|12345678|23456789|98765432|87654321|76543210)/.test(digits)) strong.push('Número sospechoso');
+    if (Number(o.qty) > 10) weak.push('Cantidad inusual');
+    const same = all.filter(x => x.id !== o.id && x.status === 'pendiente'
+      && ((digits && String(x.buyerPhone || '').replace(/\D/g, '') === digits) || x.buyerId === o.buyerId)).length;
+    if (same >= 2) weak.push(`${same + 1} pedidos pendientes del mismo comprador`);
+    const score = strong.length * 2 + weak.length;
+    return { suspect: score >= 2, reasons: [...strong, ...weak, ...info], score };
+  }
+
   const media = p => p.thumb || p.productThumb
     ? `<img src="${esc(p.thumb || p.productThumb)}" alt="" loading="lazy">`
     : `<span class="ph-emoji">${cat(p.category).emoji}</span>`;
@@ -253,12 +326,14 @@
 
   /* ---------------------- autenticación ---------------------- */
   function openLogin(reason) {
-    if (state.user) return;
+    if (loggedIn()) return;
     if (state.loginModal) return;
     const R = {
-      publicar: 'Para publicar necesitas una cuenta. ¡Es gratis y toma segundos!',
-      comprar: 'Inicia sesión para hacer tu pedido.',
+      publicar: 'Para vender necesitas una cuenta. ¡Es gratis y toma segundos!',
+      comprar: 'Inicia sesión para pedir más rápido y ver tus pedidos en cualquier dispositivo.',
       panel: 'Inicia sesión para ver tu panel de ventas.',
+      info: 'Inicia sesión para ver toda la información, todas las fotos y contactar al vendedor.',
+      guardar: 'Crea tu cuenta para guardar tus pedidos y verlos en cualquier dispositivo.',
     };
     let mode = 'login';
     const m = openModal(`
@@ -290,7 +365,7 @@
         ${B.mode === 'demo' ? '<p class="demo-note">Modo demo: Google crea un usuario de prueba. Abre otra pestaña con otra cuenta para probar comprar y vender a la vez.</p>' : ''}
       </div>`, {
       cls: 'modal-auth',
-      onClose: () => { state.loginModal = null; if (!state.user) state.afterLogin = null; },
+      onClose: () => { state.loginModal = null; if (!loggedIn()) state.afterLogin = null; },
     });
     state.loginModal = m;
     const el = m.el, form = $('form', el), F = form.elements, errEl = $('.form-error', el);
@@ -350,26 +425,30 @@
   }
 
   async function handleAuth(user) {
-    const prevUid = state.user && state.user.uid;
+    const prev = state.user;
+    const key = u => u ? `${u.uid}:${u.anonymous ? 'anon' : 'real'}` : '';
+    // Firebase avisa también cada vez que renueva el token: si nada cambió, no hacemos nada.
+    if (state.ready && key(prev) === key(user)) { if (user) state.user = { ...prev, ...user }; return; }
     state.user = user;
-    if (user) {
+    const real = !!(user && !user.anonymous);
+    if (real) {
       try { state.profile = await B.getProfile(user.uid); } catch (e) { state.profile = null; }
       if (!state.profile) {
-        state.profile = { name: state.pendingName || user.name, phone: '', faculty: '' };
+        const g = getGuest();
+        state.profile = { name: state.pendingName || user.name, phone: g.phone || '', faculty: '', studentCode: g.code || '' };
         B.saveProfile(user.uid, state.profile).catch(() => {});
       }
-      if (prevUid !== user.uid) startWatchers();
-    } else {
-      stopWatchers();
-      state.profile = null;
-    }
+    } else state.profile = null;
+    if (user) { if (!prev || prev.uid !== user.uid) startWatchers(); }
+    else stopWatchers();
     renderAccount();
-    const after = user ? state.afterLogin : null;
-    if (user) { state.afterLogin = null; state.loginModal && state.loginModal.close(); }
+    const after = real ? state.afterLogin : null;
+    if (real) { state.afterLogin = null; state.loginModal && state.loginModal.close(); }
     const firstRun = !state.ready;
     state.ready = true;
-    if (firstRun || prevUid !== (user && user.uid)) router();
-    if (user && prevUid !== user.uid && !firstRun) toast(`¡Hola, ${myName().split(' ')[0]}! 👋`);
+    // Si se acaba de crear la sesión de invitado durante un pedido, no hace falta redibujar la página.
+    if (firstRun || real || !user || (prev && !prev.anonymous)) router();
+    if (real && !firstRun) toast(`¡Hola, ${myName().split(' ')[0]}! 👋${prev && prev.anonymous ? ' Tus pedidos ya están en tu cuenta.' : ''}`);
     if (after) after();
   }
 
@@ -380,9 +459,9 @@
   }
 
   function requireAuth(fn, reason) {
-    if (state.user) return fn();
+    if (loggedIn()) return fn();
     view.innerHTML = `<div class="container">${emptyState('🔐', 'Inicia sesión para continuar',
-      'Puedes ver todos los productos sin cuenta. Para publicar, comprar o ver tu panel necesitas iniciar sesión.',
+      'Puedes ver y comprar sin cuenta. Para vender o ver tu panel necesitas iniciar sesión.',
       '<div class="empty-actions"><button class="btn btn-primary" id="gate-login">Iniciar sesión</button><a class="btn btn-ghost" href="#/">Seguir explorando</a></div>')}</div>`;
     $('#gate-login').onclick = () => openLogin(reason);
     openLogin(reason);
@@ -397,7 +476,7 @@
       const prev = new Set(state.sellerOrders.map(o => o.id));
       if (state.ordersInit.seller) {
         const fresh = list.filter(o => !prev.has(o.id) && o.status === 'pendiente');
-        fresh.forEach(o => toast(`🛎️ Nuevo pedido: ${o.qty}× ${o.productTitle}`, 'info', 6000));
+        fresh.forEach(o => toast(`🛎️ Nuevo pedido: ${o.qty}× ${o.productTitle}${fakeCheck(o, list).suspect ? ' · ⚠️ posible fake' : ''}`, 'info', 6000));
         if (fresh.length) chime();
       }
       state.sellerOrders = list; state.ordersInit.seller = true;
@@ -410,6 +489,7 @@
           .forEach(o => toast(`Tu pedido de “${o.productTitle}” fue ${STATUS[o.status].label.toLowerCase()}`, o.status === 'rechazado' ? 'err' : 'info', 6000));
       }
       state.buyerOrders = list; state.ordersInit.buyer = true;
+      syncCache(list);
       refreshPanel(['compras']);
     }));
   }
@@ -430,7 +510,7 @@
   /* ---------------------- cabecera y navegación ---------------------- */
   function renderAccount() {
     const el = $('#account');
-    if (!state.user) {
+    if (!loggedIn()) {
       el.innerHTML = '<button type="button" class="btn btn-ghost btn-sm" id="btn-login">Iniciar sesión</button>';
       $('#btn-login').onclick = () => openLogin();
     } else {
@@ -476,6 +556,7 @@
     else if ((m = path.match(/^\/p\/([\w-]+)$/))) renderProduct(m[1]);
     else if (path === '/vender') requireAuth(() => renderEditor(null), 'publicar');
     else if ((m = path.match(/^\/editar\/([\w-]+)$/))) requireAuth(() => renderEditor(m[1]), 'publicar');
+    else if (path === '/panel/compras' && !loggedIn()) renderGuestPurchases();
     else if ((m = path.match(/^\/panel(?:\/(\w+))?$/))) requireAuth(() => renderPanel(m[1] || 'resumen'), 'panel');
     else view.innerHTML = `<div class="container">${emptyState('🧭', 'Página no encontrada', 'El enlace no existe o fue eliminado.', '<a class="btn btn-primary" href="#/">Ir al inicio</a>')}</div>`;
     updateNav(path);
@@ -507,8 +588,9 @@
 
   // Abre el pedido directo desde el catálogo (pide sesión si hace falta).
   function startOrder(p) {
-    if (!state.user) { state.afterLogin = () => openOrder(p); openLogin('comprar'); }
-    else openOrder(p);
+    if (loggedIn()) return openOrder(p);
+    if (C.guestCheckout === false) { state.afterLogin = () => openOrder(p); openLogin('comprar'); return; }
+    openOrder(p, { guest: true });
   }
 
   // El catálogo se mantiene sincronizado en tiempo real para todos los visitantes.
@@ -543,6 +625,12 @@
         </div>
       </section>
       <div class="container">
+        ${!loggedIn() && Date.now() - pref('nudgeHiddenAt', 0) > 3 * 86400e3 ? `<div class="login-nudge" id="nudge">
+          <span class="nudge-ic">✨</span>
+          <div><strong>Puedes comprar sin cuenta</strong><small>Pero con tu cuenta ves toda la info, contactas a los vendedores y tus pedidos te siguen a cualquier dispositivo.</small></div>
+          <button type="button" class="btn btn-primary btn-sm" data-nudge-login>Iniciar sesión</button>
+          <button type="button" class="btn-icon" data-nudge-close aria-label="Cerrar aviso">${icon('x')}</button>
+        </div>` : ''}
         <div class="chips" id="cats">
           <button class="chip ${f.cat === 'all' ? 'active' : ''}" data-cat="all">🔥 Todo</button>
           ${C.categories.map(c => `<button class="chip ${f.cat === c.id ? 'active' : ''}" data-cat="${c.id}">${c.emoji} ${esc(c.label)}</button>`).join('')}
@@ -586,6 +674,11 @@
       drawGrid();
     };
     $('#sort').onchange = e => { f.sort = e.target.value; drawGrid(); };
+    const nudge = $('#nudge');
+    if (nudge) nudge.onclick = e => {
+      if (e.target.closest('[data-nudge-login]')) openLogin('info');
+      if (e.target.closest('[data-nudge-close]')) { setPref('nudgeHiddenAt', Date.now()); nudge.remove(); }
+    };
     $('#mode').onchange = e => { f.mode = e.target.value; drawGrid(); };
     $('#grid').onclick = e => {
       const b = e.target.closest('[data-quick]'); if (!b) return;
@@ -635,6 +728,10 @@
     const c = cat(p.category);
     const soldOut = p.stock === 0, paused = p.active === false;
     const wa = waLink(p.phone, `Hola ${p.sellerName}, vi tu publicación “${p.title}” en ${C.appName}. ¿Sigue disponible?`);
+    // Invitados: ven lo necesario para comprar; el resto se desbloquea al iniciar sesión.
+    const limited = C.limitGuestDetails !== false && !loggedIn() && !own;
+    const desc = p.description || '';
+    const shortDesc = limited && desc.length > 140 ? desc.slice(0, 140).replace(/\s+\S*$/, '') + '…' : desc;
     view.innerHTML = `
       <div class="container detail">
         <button type="button" class="back-link" id="back">${icon('back')} Volver</button>
@@ -658,7 +755,11 @@
               <li>${icon('box')}<div><small>Disponibles</small><strong>${isPre(p) ? 'Sobre pedido' : p.stock == null ? 'Sin límite' : soldOut ? 'Agotado' : p.stock}</strong></div></li>
               <li>${icon('cash')}<div><small>Aceptan</small><strong>${payList(p).map(payLabel).join(' · ')}</strong></div></li>
             </ul>
-            ${p.description ? `<div class="desc"><h3>Descripción</h3><p>${esc(p.description).replace(/\n/g, '<br>')}</p></div>` : ''}
+            ${desc ? `<div class="desc"><h3>Descripción</h3><p>${esc(shortDesc).replace(/\n/g, '<br>')}</p>${shortDesc !== desc ? '<button type="button" class="link-btn" data-unlock>🔒 Ver descripción completa</button>' : ''}</div>` : ''}
+            ${limited ? `<div class="unlock-card">
+              <div><strong>🔓 Desbloquea toda la info</strong><small>Descripción completa, todas las fotos, WhatsApp del vendedor y tus pedidos en cualquier dispositivo.</small></div>
+              <button type="button" class="btn btn-primary btn-sm" data-unlock>Iniciar sesión</button>
+            </div>` : ''}
             <div class="seller-card">
               ${avatar(p.sellerName, p.sellerPhoto, 'lg')}
               <div><small class="muted">Vendido por</small><strong>${esc(p.sellerName)}</strong><span class="muted small">Publicado ${timeAgo(p.createdAt)}</span></div>
@@ -669,7 +770,9 @@
                    <a class="btn btn-primary btn-lg grow" href="#/editar/${p.id}">${icon('edit')} Editar</a>`
                 : `<div class="buy-price"><small>Precio</small><strong>${money(p.price)}</strong></div>
                    <button type="button" class="btn btn-primary btn-lg grow" id="buy" ${soldOut || paused ? 'disabled' : ''}>${icon('bag')} ${soldOut ? 'Agotado' : 'Pedir ahora'}</button>
-                   ${wa ? `<a class="btn btn-wa btn-lg" target="_blank" rel="noopener" href="${esc(wa)}" aria-label="Escribir por WhatsApp">${icon('chat')}</a>` : ''}`}
+                   ${wa ? (limited
+                      ? `<button type="button" class="btn btn-wa btn-lg locked" data-unlock aria-label="Inicia sesión para escribir por WhatsApp">${icon('chat')}<span class="lock">🔒</span></button>`
+                      : `<a class="btn btn-wa btn-lg" target="_blank" rel="noopener" href="${esc(wa)}" aria-label="Escribir por WhatsApp">${icon('chat')}</a>`) : ''}`}
             </div>
           </div>
         </div>
@@ -687,8 +790,14 @@
     if (buy) buy.onclick = () => startOrder(p);
     const avail = $('#avail');
     if (avail) avail.onclick = () => quickMode(p, () => renderProduct(p.id));
-    if ((p.images || []).length) mountGallery(p.images);
-    else B.getImages(id).then(imgs => { if (imgs.length && $('.gallery-main')) mountGallery(imgs); }).catch(() => {});
+    const showImgs = imgs => {
+      if (!imgs.length || !$('.gallery-main')) return;
+      mountGallery(limited ? imgs.slice(0, 1) : imgs);
+      if (limited && imgs.length > 1) $('.gallery-main').insertAdjacentHTML('beforeend', `<button type="button" class="more-photos" data-unlock>🔒 +${imgs.length - 1} ${imgs.length === 2 ? 'foto' : 'fotos'}</button>`);
+    };
+    if ((p.images || []).length) showImgs(p.images);
+    else B.getImages(id).then(showImgs).catch(() => {});
+    view.querySelector('.detail').addEventListener('click', e => { if (e.target.closest('[data-unlock]')) openLogin('info'); });
   }
 
   function mountGallery(imgs) {
@@ -706,8 +815,9 @@
   }
 
   /* ---------------------- hacer pedido ---------------------- */
-  function openOrder(p) {
-    if (state.user.uid === p.sellerId) return toast('Esta es tu propia publicación', 'err');
+  function openOrder(p, { guest = false } = {}) {
+    if (state.user && state.user.uid === p.sellerId) return toast('Esta es tu propia publicación', 'err');
+    const g = getGuest();
     const pre = isPre(p);
     const max = pre || p.stock == null ? 50 : p.stock;
     const minPickup = Date.now() + 60 * 60e3;
@@ -717,6 +827,15 @@
     const m = openModal(`
       <form class="order-form" novalidate>
         <h2>Hacer pedido</h2>
+        ${guest ? `<div class="guest-box">
+          <div class="guest-head"><strong>Tus datos</strong><button type="button" class="link-btn" data-login>¿Tienes cuenta? Inicia sesión</button></div>
+          <label class="field"><span>Nombre completo *</span><input name="gname" autocomplete="name" maxlength="60" placeholder="Ej. Ana López" value="${esc(g.name || '')}"></label>
+          <div class="row2">
+            <label class="field"><span>WhatsApp *</span><input name="gphone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="Ej. 5512345678" value="${esc(g.phone || '')}"></label>
+            <label class="field"><span>Matrícula <em>opcional</em></span><input name="gcode" maxlength="20" placeholder="Ej. A0123456" value="${esc(g.code || '')}"></label>
+          </div>
+          <small class="muted">Se guardan en este dispositivo para tu próximo pedido. El vendedor te contactará por WhatsApp.</small>
+        </div>` : ''}
         <div class="order-item">
           <div class="order-thumb" style="--c:${cat(p.category).color}">${media(p)}</div>
           <div><strong>${esc(p.title)}</strong><span class="muted small">${money(p.price)} c/u · ${esc(p.sellerName)}</span>${modeBadge(p)}</div>
@@ -733,8 +852,8 @@
         <div class="field"><span>Método de pago</span>
           <div class="choice ${payList(p).length === 1 ? 'single' : ''}">${payList(p).map((x, i) => `<label><input type="radio" name="pay" value="${esc(x)}" ${i ? '' : 'checked'}><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
           ${payList(p).length === 1 ? `<small class="muted">Este vendedor solo acepta ${esc(payList(p)[0].toLowerCase())}.</small>` : ''}</div>
-        <label class="field"><span>Tu WhatsApp <em>para que te contacten</em></span>
-          <input name="phone" type="tel" inputmode="tel" value="${esc((state.profile && state.profile.phone) || '')}" placeholder="Ej. 5512345678"></label>
+        ${guest ? '' : `<label class="field"><span>Tu WhatsApp <em>para que te contacten</em></span>
+          <input name="phone" type="tel" inputmode="tel" value="${esc((state.profile && state.profile.phone) || '')}" placeholder="Ej. 5512345678"></label>`}
         <label class="field"><span>Nota para el vendedor <em>opcional</em></span>
           <textarea name="note" rows="2" maxlength="300" placeholder="Ej. Salgo de clase a las 12, ¿nos vemos en la biblioteca?"></textarea></label>
         <div class="order-total"><span>Total</span><strong id="total">${money(p.price)}</strong></div>
@@ -762,37 +881,58 @@
       sync();
       const out = $('#qty', m.el); out.classList.remove('bump'); void out.offsetWidth; out.classList.add('bump');
     };
-    form.onsubmit = e => {
+    const loginBtn = $('[data-login]', m.el);
+    if (loginBtn) loginBtn.onclick = () => { m.close(); state.afterLogin = () => openOrder(p); openLogin('comprar'); };
+    form.onsubmit = async e => {
       e.preventDefault();
       let pickupAt = null;
       if (pre) {
         pickupAt = F.pickup.value ? new Date(F.pickup.value).getTime() : NaN;
         if (!(pickupAt >= minPickup - 60e3)) { toast('Elige una fecha y hora de entrega (mínimo 1 hora a partir de ahora)', 'err'); F.pickup.focus(); return; }
       }
+      const gname = guest ? F.gname.value.trim().replace(/\s+/g, ' ') : '';
+      const gcode = guest ? F.gcode.value.trim() : '';
+      const phone = (guest ? F.gphone : F.phone).value.trim();
+      if (guest && (!gname || !phone)) {
+        const ok = await confirmDialog({ title: 'Faltan tus datos', text: 'Sin nombre o WhatsApp el vendedor no podrá contactarte y podría tomar tu pedido como falso. ¿Enviarlo de todos modos?', ok: 'Enviar así' });
+        if (!ok) { (gname ? F.gphone : F.gname).focus(); return; }
+      }
       busy($('[data-submit]', m.el), async () => {
-        const phone = F.phone.value.trim();
+        let uid = state.user && state.user.uid;
+        if (!uid) {
+          // Sesión de invitado: solo sirve para que este dispositivo pueda seguir el pedido.
+          try { uid = (await B.loginAnonymous()).uid; }
+          catch (err) {
+            console.error(err);
+            return toast(['auth/operation-not-allowed', 'auth/admin-restricted-operation'].includes(err.code)
+              ? 'Las compras sin cuenta no están activadas en Firebase (Authentication → Anónimo).'
+              : errMsg(err), 'err', 7000);
+          }
+        }
         const order = {
           productId: p.id, productTitle: p.title, productThumb: p.thumb || '', category: p.category,
           price: Number(p.price), qty, total: Number(p.price) * qty,
           sellerId: p.sellerId, sellerName: p.sellerName, sellerPhone: p.phone || '',
-          buyerId: state.user.uid, buyerName: myName(), buyerEmail: state.user.email, buyerPhone: phone,
+          buyerId: uid, buyerName: guest ? gname : myName(), buyerEmail: guest ? '' : (state.user.email || ''), buyerPhone: phone, guest,
           spot: F.spot.value, payment: F.pay.value, note: F.note.value.trim(), status: 'pendiente',
-          mode: pre ? 'preorden' : 'inmediato', pickupAt, buyerCode: (state.profile && state.profile.studentCode) || '',
+          mode: pre ? 'preorden' : 'inmediato', pickupAt, buyerCode: guest ? gcode : (state.profile && state.profile.studentCode) || '',
         };
         try {
-          await B.createOrder(order);
+          const oid = await B.createOrder(order);
+          cacheOrder({ ...order, id: oid, createdAt: Date.now() });
+          if (guest) setGuest({ name: gname, phone, code: gcode });
           if (phone && state.profile && !state.profile.phone) {
             state.profile.phone = phone;
             B.saveProfile(state.user.uid, { phone }).catch(() => {});
           }
           m.close();
-          orderSuccess(order);
+          orderSuccess(order, guest);
         } catch (err) { toast(errMsg(err), 'err'); }
       });
     };
   }
 
-  function orderSuccess(o) {
+  function orderSuccess(o, guest = false) {
     const wa = waLink(o.sellerPhone, `Hola ${o.sellerName}, te hice un pedido en ${C.appName}: ${o.qty}× ${o.productTitle} (${money(o.total)}). Entrega: ${o.spot}${o.pickupAt ? ', ' + fmtDate(o.pickupAt) : ''}.`);
     const m = openModal(`
       <div class="success">
@@ -804,7 +944,13 @@
           <a class="btn btn-primary btn-block" href="#/panel/compras" data-close>Ver mis compras</a>
           <button type="button" class="btn btn-ghost btn-block" data-close>Seguir comprando</button>
         </div>
+        ${guest ? `<div class="save-nudge">
+          <p>📱 Tu pedido quedó guardado <b>en este dispositivo</b>. Crea tu cuenta para verlo desde cualquier lugar y pedir más rápido.</p>
+          <button type="button" class="btn btn-ghost btn-sm" data-save-account>${GOOGLE} Guardar con Google o correo</button>
+        </div>` : ''}
       </div>`, { cls: 'modal-sm' });
+    const sa = $('[data-save-account]', m.el);
+    if (sa) sa.onclick = () => { m.close(); openLogin('guardar'); };
     return m;
   }
 
@@ -1226,19 +1372,22 @@
     if (role === 'seller') {
       if (o.status === 'pendiente') actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="reject" data-id="${o.id}">Rechazar</button><button type="button" class="btn btn-primary btn-sm" data-act="accept" data-id="${o.id}">${icon('check')} Aceptar</button>`;
       else if (o.status === 'aceptado') actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="seller-cancel" data-id="${o.id}">Cancelar</button><button type="button" class="btn btn-ok btn-sm" data-act="deliver" data-id="${o.id}">${icon('check')} Entregado</button>`;
-    } else if (o.status === 'pendiente') {
+    } else if (o.status === 'pendiente' && !o.cachedOnly) {
       actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="cancel" data-id="${o.id}">Cancelar pedido</button>`;
     }
-    return `<article class="order st-${o.status} ${compact ? 'compact' : ''}" ${compact && role === 'seller' && (o.status === 'pendiente' || o.status === 'aceptado') ? `draggable="true" data-drag="${o.id}"` : ''}>
+    const fk = role === 'seller' ? fakeCheck(o, state.sellerOrders) : { suspect: false, reasons: [] };
+    return `<article class="order st-${o.status} ${compact ? 'compact' : ''} ${fk.suspect ? 'suspect' : ''}" ${compact && role === 'seller' && (o.status === 'pendiente' || o.status === 'aceptado') ? `draggable="true" data-drag="${o.id}"` : ''}>
       <header>
         <a class="order-thumb" href="#/p/${o.productId}" style="--c:${cat(o.category).color}">${media(o)}</a>
         <div class="grow"><a href="#/p/${o.productId}" class="order-title">${esc(o.productTitle)}</a><small class="muted">${o.qty} × ${money(o.price)} · ${timeAgo(o.createdAt)}</small></div>
         <span class="status ${s.cls}">${s.label}</span>
       </header>
+      ${fk.suspect ? `<div class="fake-flag"><b>⚠️ Posible fake</b><span>${fk.reasons.map(esc).join(' · ')}</span></div>` : ''}
+      ${o.cachedOnly ? '<p class="cache-note">📱 Guardado en este dispositivo · el estado puede no estar actualizado. Inicia sesión con la misma cuenta del pedido para verlo en vivo.</p>' : ''}
       ${o.pickupAt ? `<div class="pickup ${o.pickupAt < Date.now() && o.status !== 'entregado' ? 'late' : ''}">${icon('clock')}<span>Pre-orden para <b>${esc(fmtDate(o.pickupAt))}</b></span></div>` : ''}
       ${idx >= 0 && !compact ? `<ol class="progress">${steps.map((st, i) => `<li class="${i <= idx ? 'done' : ''}"><i></i>${STATUS[st].label}</li>`).join('')}</ol>` : ''}
       <dl class="order-meta">
-        <div><dt>${other.label}</dt><dd>${esc(other.name)}${role === 'seller' && o.buyerCode ? `<small class="muted"> · ${esc(o.buyerCode)}</small>` : ''}</dd></div>
+        <div><dt>${other.label}</dt><dd>${esc(other.name || 'Sin nombre')}${role === 'seller' && o.buyerCode ? `<small class="muted"> · ${esc(o.buyerCode)}</small>` : ''}${role === 'seller' && o.guest ? ' <span class="tag-guest">Invitado</span>' : ''}</dd></div>
         <div><dt>Entrega</dt><dd>${esc(o.spot || 'Por acordar')}</dd></div>
         <div><dt>Pago</dt><dd>${esc(o.payment || '')}</dd></div>
         <div><dt>Total</dt><dd><b>${money(o.total)}</b></dd></div>
@@ -1332,8 +1481,9 @@
         aceptado: so.filter(o => o.status === 'aceptado'),
         entregado: so.filter(o => o.status === 'entregado'),
         cerrado: so.filter(o => o.status === 'cancelado' || o.status === 'rechazado'),
+        fake: so.filter(o => (o.status === 'pendiente' || o.status === 'aceptado') && fakeCheck(o, so).suspect),
       };
-      const labels = { todos: 'Todos', pendiente: 'Pendientes', aceptado: 'Aceptados', entregado: 'Entregados', cerrado: 'Cancelados' };
+      const labels = { todos: 'Todos', pendiente: 'Pendientes', aceptado: 'Aceptados', entregado: 'Entregados', cerrado: 'Cancelados', fake: '⚠️ Posibles fake' };
       const f = state.orderFilter in groups ? state.orderFilter : 'todos';
       const list = groups[f];
       el.innerHTML = toggle + `
@@ -1383,11 +1533,31 @@
   }
 
   function tabCompras(el) {
-    const list = state.buyerOrders;
-    el.innerHTML = !state.ordersInit.buyer ? loader() : list.length
+    // Pedidos en vivo + los guardados en este dispositivo (por ejemplo, hechos como invitado).
+    const live = state.buyerOrders;
+    const ids = new Set(live.map(o => o.id));
+    const list = [...live, ...cachedOrders().filter(o => !ids.has(o.id)).map(o => ({ ...o, cachedOnly: true }))]
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    el.innerHTML = state.user && !state.ordersInit.buyer ? loader() : list.length
       ? `<div class="orders">${list.map(o => orderCard(o, 'buyer')).join('')}</div>`
       : emptyState('🛍️', 'Aún no has comprado nada', 'Explora lo que venden en tu universidad.', '<a class="btn btn-primary" href="#/">Explorar productos</a>');
     bindOrderActions(el);
+  }
+
+  // "Mis compras" para quien no ha iniciado sesión: lo guardado en este dispositivo.
+  function renderGuestPurchases() {
+    view.innerHTML = `
+      <div class="container panel">
+        <div class="page-head"><h1>Mis compras</h1><p class="muted">Pedidos hechos desde este dispositivo.</p></div>
+        <div class="unlock-card">
+          <div><strong>🔐 Guarda tus pedidos en tu cuenta</strong><small>Si borras los datos del navegador o cambias de celular, los pedidos de invitado se pierden.</small></div>
+          <button type="button" class="btn btn-primary btn-sm" id="gp-login">Iniciar sesión</button>
+        </div>
+        <div id="tab" class="tab-body"></div>
+      </div>`;
+    $('#gp-login').onclick = () => openLogin('guardar');
+    state.panelTab = 'compras';
+    tabCompras($('#tab'));
   }
 
   function tabPerfil(el) {
@@ -1472,7 +1642,7 @@
     b.innerHTML = '<strong>⚠️ Abriste el archivo directamente.</strong> Puedes ver productos, pero para iniciar sesión abre la página con <code>iniciar.command</code> (doble clic) o en <code>http://localhost:5173</code>.';
     b.hidden = false;
   }
-  $('#nav-account').onclick = () => (state.user ? (location.hash = '#/panel/perfil') : openLogin());
+  $('#nav-account').onclick = () => (loggedIn() ? (location.hash = '#/panel/perfil') : openLogin());
   window.addEventListener('hashchange', router);
   watchCatalog();
   B.onAuth(handleAuth);
