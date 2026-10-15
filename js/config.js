@@ -9,7 +9,7 @@
    ========================================================= */
 window.APP_CONFIG = {
   appName: 'Hiusu',
-  universityName: 'Mi Universidad',
+  universityName: 'CUGDL',
 
   firebase: {
     apiKey: 'AIzaSyCMulJeBpIBgWTbLSLWy2tgVLj20tYiRdw',
