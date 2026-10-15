@@ -864,3 +864,5 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 .btn.copied { background: var(--ok) !important; color: #fff !important; border-color: var(--ok) !important; }
 .tr-note { margin: 6px 0 0; font-size: 13px; font-style: italic; color: var(--muted); }
 .tr-foot { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }
+.method-choice span { flex-direction: column; gap: 2px; text-align: center; }
+.method-choice small { font-weight: 500; font-size: 11.5px; color: var(--muted); }

@@ -117,7 +117,13 @@
   }
   const fmtClabe = c => c ? `${c.slice(0, 3)} ${c.slice(3, 6)} ${c.slice(6, 17)} ${c.slice(17)}` : '';
   const fmtCard = n => n ? n.replace(/(\d{4})(?=\d)/g, '$1 ') : '';
-  const transferText = t => [t.holder && `Titular: ${t.holder}`, t.bank && `Banco: ${t.bank}`, t.clabe && `CLABE: ${t.clabe}`, t.card && `Tarjeta: ${t.card}`, t.note].filter(Boolean).join('\n');
+  // Solo una forma de cobro: CLABE o tarjeta (si hay datos viejos con las dos, gana la CLABE).
+  const oneMethod = t => {
+    if (!t) return t;
+    const method = t.method === 'card' && t.card ? 'card' : t.clabe ? 'clabe' : t.card ? 'card' : (t.method || 'clabe');
+    return { ...t, method, clabe: method === 'clabe' ? t.clabe || '' : '', card: method === 'card' ? t.card || '' : '' };
+  };
+  const transferText = t => { t = oneMethod(t); return [t.holder && `Titular: ${t.holder}`, t.bank && `Banco: ${t.bank}`, t.clabe && `CLABE: ${t.clabe}`, t.card && `Tarjeta: ${t.card}`, t.note].filter(Boolean).join('\n'); };
   const hasTransfer = t => !!(t && (t.clabe || t.card));
   // Ajustes privados del vendedor (solo los lee él).
   async function loadPriv(force) {
@@ -138,15 +144,30 @@
           <h2>🏦 Datos para cobrar</h2>
           <p class="muted small">Los pones una sola vez y se usan en todas tus ventas. Solo los verá quien te compre, <b>cuando aceptes su pedido</b>.</p>
           <label class="field"><span>Nombre del titular *</span><input name="holder" maxlength="80" autocomplete="name" placeholder="Como aparece en tu cuenta"></label>
-          <label class="field"><span>CLABE interbancaria <em>18 dígitos</em></span><input name="clabe" inputmode="numeric" maxlength="24" placeholder="012 180 01234567890 1" autocomplete="off"><small class="field-hint" data-hint="clabe"></small></label>
-          <label class="field"><span>Número de tarjeta <em>opcional, para depósitos en OXXO o transferencias a tarjeta</em></span><input name="card" inputmode="numeric" maxlength="23" placeholder="4152 3138 0000 0000" autocomplete="off"><small class="field-hint" data-hint="card"></small></label>
-          <label class="field"><span>Banco</span><input name="bank" maxlength="40" list="bank-list" placeholder="Se detecta con la CLABE"><datalist id="bank-list">${[...new Set(Object.values(BANKS))].map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>
+          <div class="field"><span>¿Cómo te van a pagar? <em>elige una sola opción</em></span>
+            <div class="choice method-choice">
+              <label><input type="radio" name="method" value="clabe"><span>🏦 CLABE<small>Transferencia SPEI</small></span></label>
+              <label><input type="radio" name="method" value="card"><span>💳 Tarjeta<small>Transferencia o depósito OXXO</small></span></label>
+            </div>
+          </div>
+          <label class="field" data-method="clabe"><span>CLABE interbancaria <em>18 dígitos</em></span><input name="clabe" inputmode="numeric" maxlength="24" placeholder="012 180 01234567890 1" autocomplete="off"><small class="field-hint" data-hint="clabe"></small></label>
+          <label class="field" data-method="card" hidden><span>Número de tarjeta <em>16 dígitos</em></span><input name="card" inputmode="numeric" maxlength="23" placeholder="4152 3138 0000 0000" autocomplete="off"><small class="field-hint" data-hint="card"></small></label>
+          <label class="field"><span>Banco</span><input name="bank" maxlength="40" list="bank-list" placeholder="Ej. BBVA"><datalist id="bank-list">${[...new Set(Object.values(BANKS))].map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>
           <label class="field"><span>Nota para el comprador <em>opcional</em></span><input name="note" maxlength="120" placeholder="Ej. Mándame captura del comprobante por WhatsApp"></label>
-          <p class="notice warn small">Nunca compartas tu NIP, contraseñas ni códigos de tu banco. Solo CLABE o número de tarjeta.</p>
+          <p class="notice warn small">Nunca compartas tu NIP, contraseñas ni códigos de tu banco.</p>
           <p class="form-error" hidden></p>
           <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Guardar datos</button>
         </form>`, { cls: 'modal-sheet', onClose: () => resolve(saved) });
       const form = $('form', m.el), F = form.elements, errEl = $('.form-error', form);
+      current = oneMethod(current) || {};
+      F.method.value = current.method || 'clabe';
+      const syncMethod = () => {
+        $$('[data-method]', form).forEach(x => (x.hidden = x.dataset.method !== F.method.value));
+        F.bank.placeholder = F.method.value === 'clabe' ? 'Se detecta con la CLABE' : 'Ej. BBVA, Nu, Mercado Pago';
+        errEl.hidden = true;
+      };
+      syncMethod();
+      form.addEventListener('change', e => { if (e.target.name === 'method') { syncMethod(); (F.method.value === 'clabe' ? F.clabe : F.card).focus(); } });
       F.holder.value = current.holder || myName();
       F.clabe.value = fmtClabe(current.clabe || '');
       F.card.value = fmtCard(current.card || '');
@@ -174,13 +195,14 @@
       check();
       form.onsubmit = e => {
         e.preventDefault();
-        const t = { holder: F.holder.value.trim(), clabe: onlyDigits(F.clabe.value), card: onlyDigits(F.card.value), bank: F.bank.value.trim(), note: F.note.value.trim() };
+        const method = F.method.value;
+        // Solo se guarda la opción elegida; la otra se descarta para no confundir al comprador.
+        const t = { method, holder: F.holder.value.trim(), clabe: method === 'clabe' ? onlyDigits(F.clabe.value) : '', card: method === 'card' ? onlyDigits(F.card.value) : '', bank: F.bank.value.trim(), note: F.note.value.trim() };
         const fail = msg => { errEl.textContent = msg; errEl.hidden = false; };
         errEl.hidden = true;
         if (t.holder.length < 3) return fail('Escribe el nombre del titular de la cuenta.');
-        if (!t.clabe && !t.card) return fail('Escribe tu CLABE o tu número de tarjeta.');
-        if (t.clabe && !clabeValid(t.clabe)) return fail('La CLABE no es válida: deben ser 18 dígitos correctos.');
-        if (t.card && !cardValid(t.card)) return fail('El número de tarjeta no es válido.');
+        if (method === 'clabe' && !clabeValid(t.clabe)) return fail(t.clabe ? 'La CLABE no es válida: deben ser 18 dígitos correctos.' : 'Escribe tu CLABE de 18 dígitos.');
+        if (method === 'card' && !cardValid(t.card)) return fail(t.card ? 'El número de tarjeta no es válido.' : 'Escribe tu número de tarjeta de 16 dígitos.');
         if (!t.bank && t.clabe) t.bank = BANKS[t.clabe.slice(0, 3)] || '';
         busy($('[data-submit]', form), async () => {
           try {
@@ -195,13 +217,15 @@
     });
   }
   // Resumen en texto plano (se muestra con textContent).
-  const transferSummary = t => hasTransfer(t)
-    ? `${t.bank || 'Cuenta'} · ${t.clabe ? 'CLABE ••••' + t.clabe.slice(-4) : ''}${t.clabe && t.card ? ' · ' : ''}${t.card ? 'Tarjeta ••••' + t.card.slice(-4) : ''}`
-    : '';
+  const transferSummary = t => {
+    if (!hasTransfer(t)) return '';
+    t = oneMethod(t);
+    return `${t.bank || 'Cuenta'} · ${t.method === 'card' ? 'Tarjeta ••••' + t.card.slice(-4) : 'CLABE ••••' + t.clabe.slice(-4)}`;
+  };
 
   // Lo que ve el comprador: cada dato con su botón de copiar.
   function transferCard(o) {
-    const t = o.transfer;
+    const t = oneMethod(o.transfer);
     if (!hasTransfer(t)) {
       return o.transferInfo
         ? `<div class="transfer"><div><small>🏦 Datos para transferir · ${money(o.total)}</small><p>${esc(o.transferInfo).replace(/\n/g, '<br>')}</p></div><button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(o.transferInfo)}">Copiar</button></div>`
@@ -1639,7 +1663,7 @@
             t = await openTransferSetup();
             if (!t) return toast('Para aceptar pagos por transferencia necesitas tus datos para cobrar.', 'err');
           }
-          extra = hasTransfer(t) ? { transfer: t, transferInfo: transferText(t) } : { transferInfo: priv.transferInfo.trim() };
+          extra = hasTransfer(t) ? { transfer: oneMethod(t), transferInfo: transferText(t) } : { transferInfo: priv.transferInfo.trim() };
         }
         await busy(btn, async () => { await B.updateOrder(id, { status: 'aceptado', ...extra }); await adjustStock(-o.qty); });
         toast('Pedido aceptado. ¡Coordina la entrega! ✅');
