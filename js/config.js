@@ -16,7 +16,7 @@ window.APP_CONFIG = {
   legal: {
     owner: 'Kodoxa Technologies',          // responsable de Hiusu
     ownerUrl: 'https://kodoxa.com',
-    contactEmail: '',                       // ⚠️ pon un correo real: el Aviso de privacidad lo exige
+    contactEmail: 'soporte@hiusu.com',      // aparece en el pie de página y en las páginas legales
     city: 'Guadalajara, Jalisco, México',
     instagram: '',                          // ej. 'https://www.instagram.com/hiusu.mx' (vacío = no se muestra)
     updated: '14 de octubre de 2026',       // cámbiala cuando modifiques los textos legales
@@ -88,6 +88,11 @@ window.APP_CONFIG = {
   // Vacía ('') = App Check apagado.
   appCheckSiteKey: '6LdD9-8tAAAAACm0jxOn3o7C4vT7yESd3MVPM3d6',
   appCheckProvider: 'enterprise',   // 'enterprise' (Fraud Defense) o 'v3' (reCAPTCHA clásico)
+
+  // Destacados del catálogo
+  hotMinSold: 3,       // ventas mínimas para que un producto salga como 🔥 HOT
+  hotTop: 8,           // cuántos productos HOT se muestran como máximo
+  newSellerDays: 30,   // días que la primera publicación de un vendedor sale como ✨ Nuevo
 
   // Sonido y vibración cuando llega un pedido nuevo (cada usuario puede apagarlo en su perfil)
   orderSound: true,

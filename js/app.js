@@ -246,6 +246,17 @@
     </div>`;
   }
 
+  /* ---------------------- reseñas y ventas ---------------------- */
+  const starsHtml = (n, cls = '') => {
+    const full = Math.round(Number(n) || 0);
+    return `<span class="stars ${cls}" aria-label="${(Number(n) || 0).toFixed(1)} de 5">${[1, 2, 3, 4, 5].map(i => `<i class="${i <= full ? 'on' : ''}">★</i>`).join('')}</span>`;
+  };
+  const avgOf = list => (list.length ? list.reduce((a, r) => a + r.rating, 0) / list.length : 0);
+  // "Luis Ramírez Pérez" → "Luis R." (las reseñas son públicas: no mostramos el nombre completo)
+  const shortName = n => { const w = String(n || 'Comprador').trim().split(/\s+/); return (w[0] + (w[1] ? ' ' + w[1][0].toUpperCase() + '.' : '')).slice(0, 40); };
+  // Ventas totales de un vendedor = suma de lo vendido en sus publicaciones (ya están en el catálogo, sin lecturas extra).
+  const sellerSales = sid => state.products.filter(p => p.sellerId === sid).reduce((a, p) => a + (p.sold || 0), 0);
+
   /* ---------------------- invitados ---------------------- */
   // Con cuenta real (Google o correo). Un invitado tiene una sesión anónima solo para seguir sus pedidos.
   const loggedIn = () => !!(state.user && !state.user.anonymous);
@@ -787,22 +798,64 @@
   }
 
   /* ---------------------- catálogo ---------------------- */
+  // Destacados: lo más vendido (HOT) y la primera publicación de vendedores nuevos.
+  const HOT_MIN = C.hotMinSold || 3;        // ventas mínimas para ser HOT
+  const HOT_TOP = C.hotTop || 8;            // máximo de productos HOT a la vez
+  const NEW_DAYS = C.newSellerDays || 30;   // cuánto tiempo se muestra "Nuevo vendedor"
+  function computeRanks() {
+    const visible = state.products.filter(p => p.active !== false);
+    const hot = new Set(visible.filter(p => (p.sold || 0) >= HOT_MIN).sort((a, b) => b.sold - a.sold).slice(0, HOT_TOP).map(p => p.id));
+    const bySeller = new Map();
+    state.products.forEach(p => bySeller.set(p.sellerId, [...(bySeller.get(p.sellerId) || []), p]));
+    const fresh = new Set();
+    bySeller.forEach(list => {
+      const sold = list.reduce((a, p) => a + (p.sold || 0), 0);
+      const p = list[0];
+      if (list.length === 1 && !sold && p.active !== false && Date.now() - (p.createdAt || 0) < NEW_DAYS * 86400e3) fresh.add(p.id);
+    });
+    state.rank = { hot, fresh };
+    return state.rank;
+  }
+  // Estrellas de cada vendedor (se cargan una vez por visita).
+  function loadSellerRatings() {
+    if (state.sellerRatings || state.sellerRatingsLoading) return;
+    state.sellerRatingsLoading = true;
+    B.listAllReviews().then(list => {
+      const m = new Map();
+      list.forEach(r => { const x = m.get(r.sellerId) || { sum: 0, count: 0 }; x.sum += r.rating; x.count++; m.set(r.sellerId, x); });
+      state.sellerRatings = m;
+      if ($('#feed')) drawGrid();
+    }).catch(() => { state.sellerRatings = new Map(); }).finally(() => { state.sellerRatingsLoading = false; });
+  }
+  const sellerStars = sid => {
+    const r = state.sellerRatings && state.sellerRatings.get(sid);
+    return r ? `<span class="seller-star">★ ${(r.sum / r.count).toFixed(1)}</span>` : '';
+  };
+
+  // Tarjeta al estilo Marketplace: foto grande, precio, título, lugar y vendedor con estrellas.
   const productCard = (p, href = `#/p/${p.id}`, { quick = false } = {}) => {
     const c = cat(p.category);
     const soldOut = p.stock === 0;
     const own = state.user && state.user.uid === p.sellerId;
     const canQuick = quick && !soldOut && !own && p.active !== false;
-    return `<div class="card-wrap">
+    const rk = state.rank || { hot: new Set(), fresh: new Set() };
+    const hot = rk.hot.has(p.id), fresh = !hot && rk.fresh.has(p.id);
+    const badge = soldOut ? '<span class="card-badge">Agotado</span>'
+      : hot ? '<span class="card-badge is-hot">🔥 HOT</span>'
+      : fresh ? '<span class="card-badge is-new" title="Primera publicación de un vendedor nuevo">✨ Nuevo</span>'
+      : p.stock != null && p.stock <= 3 ? `<span class="card-badge low">¡Quedan ${p.stock}!</span>` : '';
+    return `<div class="card-wrap ${hot ? 'hot' : ''} ${fresh ? 'fresh' : ''}">
       <a class="card ${soldOut ? 'sold' : ''}" href="${href}">
         <div class="card-media" style="--c:${c.color}">${media(p)}
-          ${soldOut ? '<span class="card-badge">Agotado</span>' : p.stock != null && p.stock <= 3 ? `<span class="card-badge hot">¡Quedan ${p.stock}!</span>` : ''}
+          ${badge}
           ${isPre(p) ? '<span class="card-mode">📅 Pre-orden</span>' : ''}
+          ${(p.images || []).length > 1 ? `<span class="card-photos">${icon('image')}${p.images.length}</span>` : ''}
         </div>
         <div class="card-body">
-          <div class="card-price">${money(p.price)}</div>
+          <div class="card-price">${money(p.price)}${p.sold ? `<small class="card-sold">· ${p.sold} vendido${p.sold === 1 ? '' : 's'}</small>` : ''}</div>
           <h3 class="card-title">${esc(p.title || 'Sin título')}</h3>
           <div class="card-meta">${p.spot ? `${icon('pin')}<span>${esc(p.spot)}</span>` : `<span>${c.emoji} ${esc(p.sub || c.label)}</span>`}</div>
-          <div class="card-seller">${avatar(p.sellerName, p.sellerPhoto, 'xs')}<span>${esc(p.sellerName || '')}</span><time>${timeAgo(p.createdAt)}</time></div>
+          <div class="card-seller">${avatar(p.sellerName, p.sellerPhoto, 'xs')}<span>${esc(p.sellerName || '')}</span>${sellerStars(p.sellerId)}</div>
         </div>
       </a>
       ${canQuick ? `<button type="button" class="quick-buy" data-quick="${p.id}" aria-label="Pedir ${esc(p.title)}">${icon('plus')}</button>` : ''}
@@ -820,10 +873,10 @@
   function watchCatalog() {
     B.watchProducts(list => {
       state.products = list; state.productsLoaded = true; state.productsError = null;
-      if ($('#grid')) drawGrid();
+      if ($('#feed')) drawGrid();
     }, e => {
       state.productsError = e;
-      if ($('#grid')) drawGrid();
+      if ($('#feed')) drawGrid();
     });
   }
 
@@ -833,6 +886,17 @@
     return `<button class="chip ${state.filter.sub === 'all' ? 'active' : ''}" data-sub="all">Todos</button>`
       + c.subs.map(s => `<button class="chip ${state.filter.sub === s ? 'active' : ''}" data-sub="${esc(s)}">${esc(s)}</button>`).join('');
   };
+  // Barra de categorías estilo Uber Eats: ícono grande y nombre abajo.
+  const TILES = () => [
+    { id: 'all', label: 'Todo', emoji: '🏪', color: '#3f2d9c' },
+    { id: 'hot', label: 'Más vendido', emoji: '🔥', color: '#ef4444' },
+    { id: 'new', label: 'Nuevos', emoji: '✨', color: '#7b61ff' },
+    ...C.categories.map(c => ({ id: c.id, label: c.label.split(' y ')[0], emoji: c.emoji, color: c.color })),
+  ];
+  const catTiles = () => TILES().map(t => `
+    <button type="button" class="cat-tile ${state.filter.cat === t.id ? 'active' : ''}" data-cat="${t.id}" style="--c:${t.color}">
+      <span class="cat-ic">${t.emoji}</span><span class="cat-name">${esc(t.label)}</span>
+    </button>`).join('');
 
   function renderHome() {
     const f = state.filter;
@@ -855,12 +919,9 @@
           <button type="button" class="btn btn-primary btn-sm" data-nudge-login>Iniciar sesión</button>
           <button type="button" class="btn-icon" data-nudge-close aria-label="Cerrar aviso">${icon('x')}</button>
         </div>` : ''}
-        <div class="chips" id="cats">
-          <button class="chip ${f.cat === 'all' ? 'active' : ''}" data-cat="all">🔥 Todo</button>
-          ${C.categories.map(c => `<button class="chip ${f.cat === c.id ? 'active' : ''}" data-cat="${c.id}">${c.emoji} ${esc(c.label)}</button>`).join('')}
-        </div>
+        <nav class="cat-rail" id="cats" aria-label="Categorías">${catTiles()}</nav>
         <div class="chips sub" id="subs">${subChips()}</div>
-        <div class="toolbar">
+        <div class="toolbar" id="toolbar">
           <span id="count" class="muted"></span>
           <div class="toolbar-right">
             <label class="select-wrap"><span class="sr-only">Modalidad</span>
@@ -872,25 +933,26 @@
             </label>
             <label class="select-wrap"><span class="sr-only">Ordenar</span>
               <select id="sort">
-                <option value="new" ${f.sort === 'new' ? 'selected' : ''}>Más recientes</option>
+                <option value="new" ${f.sort === 'new' ? 'selected' : ''}>Destacados y recientes</option>
+                <option value="sold" ${f.sort === 'sold' ? 'selected' : ''}>Más vendidos</option>
                 <option value="low" ${f.sort === 'low' ? 'selected' : ''}>Menor precio</option>
                 <option value="high" ${f.sort === 'high' ? 'selected' : ''}>Mayor precio</option>
               </select>
             </label>
           </div>
         </div>
-        <div class="grid" id="grid">${'<div class="card skel"><div class="card-media"></div><div class="card-body"><i></i><i></i><i></i></div></div>'.repeat(8)}</div>
+        <div id="feed"><div class="grid">${'<div class="card skel"><div class="card-media"></div><div class="card-body"><i></i><i></i><i></i></div></div>'.repeat(8)}</div></div>
       </div>`;
     const q = $('#q');
     q.oninput = debounce(() => { f.q = q.value.trim(); drawGrid(); }, 120);
-    $('#cats').onclick = e => {
-      const b = e.target.closest('[data-cat]'); if (!b) return;
-      f.cat = b.dataset.cat; f.sub = 'all';
-      $$('#cats .chip').forEach(x => x.classList.toggle('active', x === b));
-      b.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    const pickCat = id => {
+      f.cat = id; f.sub = 'all';
+      $$('#cats .cat-tile').forEach(x => x.classList.toggle('active', x.dataset.cat === id));
+      const t = $(`#cats [data-cat="${id}"]`); if (t) t.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
       $('#subs').innerHTML = subChips();
       drawGrid();
     };
+    $('#cats').onclick = e => { const b = e.target.closest('[data-cat]'); if (b) pickCat(b.dataset.cat); };
     $('#subs').onclick = e => {
       const b = e.target.closest('[data-sub]'); if (!b) return;
       f.sub = b.dataset.sub;
@@ -904,39 +966,78 @@
       if (e.target.closest('[data-nudge-close]')) { setPref('nudgeHiddenAt', Date.now()); nudge.remove(); }
     };
     $('#mode').onchange = e => { f.mode = e.target.value; drawGrid(); };
-    $('#grid').onclick = e => {
+    $('#feed').onclick = e => {
+      const more = e.target.closest('[data-goto]');
+      if (more) { pickCat(more.dataset.goto); $('#cats').scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
       const b = e.target.closest('[data-quick]'); if (!b) return;
       e.preventDefault();
       const p = state.products.find(x => x.id === b.dataset.quick);
       if (p) startOrder(p);
     };
+    loadSellerRatings();
     if (state.productsLoaded || state.productsError) drawGrid();
   }
 
   function drawGrid() {
-    const f = state.filter, g = $('#grid');
-    if (!g) return;
+    const f = state.filter, feed = $('#feed');
+    if (!feed) return;
     if (state.productsError && !state.productsLoaded) {
-      g.innerHTML = emptyState('⚠️', 'No pudimos cargar los productos', errMsg(state.productsError));
+      feed.innerHTML = emptyState('⚠️', 'No pudimos cargar los productos', errMsg(state.productsError));
       return;
     }
+    const rk = computeRanks();
     const q = normTxt(f.q);
     const visible = state.products.filter(p => p.active !== false);
-    let list = visible.filter(p => (f.cat === 'all' || p.category === f.cat)
-      && (f.sub === 'all' || p.sub === f.sub)
-      && (f.mode === 'all' || (f.mode === 'preorden') === isPre(p))
-      && (!q || normTxt(`${p.title} ${p.description} ${p.sellerName} ${p.spot} ${p.sub || ''}`).includes(q)));
-    if (f.sort === 'low') list.sort((a, b) => a.price - b.price);
-    else if (f.sort === 'high') list.sort((a, b) => b.price - a.price);
-    else list.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
-    $('#count').textContent = `${list.length} ${list.length === 1 ? 'producto' : 'productos'}`;
-    const filtered = f.q || f.cat !== 'all' || f.mode !== 'all';
-    g.innerHTML = list.length ? list.map(p => productCard(p, undefined, { quick: true })).join('')
-      : emptyState('🔎', 'No encontramos nada', filtered ? 'Prueba con otra búsqueda, categoría o modalidad.' : 'Todavía no hay publicaciones. ¡Sé el primero en vender!',
-        '<a class="btn btn-primary" href="#/vender">Publicar algo</a>');
+    const byNew = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
+    // Destacados primero: HOT, luego nuevos vendedores, luego lo más reciente.
+    const featured = (a, b) => (rk.hot.has(b.id) - rk.hot.has(a.id)) || (rk.fresh.has(b.id) - rk.fresh.has(a.id)) || byNew(a, b);
+    const sorter = { low: (a, b) => a.price - b.price, high: (a, b) => b.price - a.price, sold: (a, b) => (b.sold || 0) - (a.sold || 0) || byNew(a, b) }[f.sort] || featured;
+    const card = p => productCard(p, undefined, { quick: true });
     const sellers = new Set(visible.map(p => p.sellerId)).size;
     const hs = $('#hero-stats');
     if (hs) hs.innerHTML = `<span><b>${visible.length}</b> productos</span><span><b>${sellers}</b> vendedores</span><span><span class="live-dot"></span>En vivo</span>`;
+
+    // Vista "explorar" (estilo Uber Eats): una fila deslizable por sección.
+    const browsing = f.cat === 'all' && !q && f.mode === 'all' && f.sort === 'new';
+    $('#toolbar').classList.toggle('compact', browsing);
+    if (browsing) {
+      const row = (title, sub, list, goto) => list.length ? `
+        <section class="row-sec">
+          <header><div><h2>${title}</h2>${sub ? `<small class="muted">${sub}</small>` : ''}</div>
+            ${goto ? `<button type="button" class="row-more" data-goto="${goto}" aria-label="Ver todo">${icon('back')}</button>` : ''}</header>
+          <div class="row-scroll">${list.map(card).join('')}</div>
+        </section>` : '';
+      const hotList = visible.filter(p => rk.hot.has(p.id)).sort((a, b) => b.sold - a.sold);
+      const freshList = visible.filter(p => rk.fresh.has(p.id)).sort(byNew);
+      const sections = [
+        row('🔥 Lo más vendido', 'Lo que todos están pidiendo', hotList, 'hot'),
+        row('✨ Nuevos vendedores', 'Su primera publicación: ¡apóyalos!', freshList, 'new'),
+        ...C.categories.map(c => {
+          const list = visible.filter(p => p.category === c.id).sort(featured);
+          return row(`${c.emoji} ${esc(c.label)}`, `${list.length} ${list.length === 1 ? 'producto' : 'productos'}`, list.slice(0, 12), c.id);
+        }),
+      ].join('');
+      $('#count').textContent = `${visible.length} ${visible.length === 1 ? 'producto' : 'productos'}`;
+      feed.innerHTML = visible.length
+        ? sections + `<section class="row-sec all-sec"><header><div><h2>🏪 Todo lo publicado</h2></div></header><div class="grid">${[...visible].sort(featured).map(card).join('')}</div></section>`
+        : emptyState('🛍️', 'Todavía no hay publicaciones', '¡Sé el primero en vender!', '<a class="btn btn-primary" href="#/vender">Publicar algo</a>');
+      return;
+    }
+
+    // Vista de resultados: cuadrícula filtrada.
+    let list = visible.filter(p => (f.cat === 'all' || f.cat === 'hot' || f.cat === 'new' || p.category === f.cat)
+      && (f.cat !== 'hot' || rk.hot.has(p.id))
+      && (f.cat !== 'new' || rk.fresh.has(p.id))
+      && (f.sub === 'all' || p.sub === f.sub)
+      && (f.mode === 'all' || (f.mode === 'preorden') === isPre(p))
+      && (!q || normTxt(`${p.title} ${p.description} ${p.sellerName} ${p.spot} ${p.sub || ''}`).includes(q)));
+    list.sort(f.cat === 'hot' ? (a, b) => b.sold - a.sold : sorter);
+    $('#count').textContent = `${list.length} ${list.length === 1 ? 'producto' : 'productos'}`;
+    const emptyMsg = f.cat === 'hot' ? `Aquí aparecen los productos con ${HOT_MIN} ventas o más.`
+      : f.cat === 'new' ? 'Aquí aparece la primera publicación de cada vendedor nuevo.'
+      : 'Prueba con otra búsqueda, categoría o modalidad.';
+    feed.innerHTML = list.length ? `<div class="grid">${list.map(card).join('')}</div>`
+      : emptyState('🔎', 'No encontramos nada', emptyMsg, '<a class="btn btn-primary" href="#/vender">Publicar algo</a>');
   }
 
   /* ---------------------- detalle de producto ---------------------- */
@@ -971,6 +1072,7 @@
             </div>
             <h1 class="detail-title">${esc(p.title)}</h1>
             <div class="detail-price">${money(p.price)}</div>
+            <div class="detail-social" id="detail-social">${p.sold ? `<span>🔥 ${p.sold} vendido${p.sold === 1 ? '' : 's'}</span>` : ''}</div>
             ${paused ? '<div class="notice warn">Esta publicación está pausada y no aparece en el catálogo.</div>' : ''}
             ${isPre(p) && !paused ? '<div class="notice info">📅 Se prepara sobre pedido: al pedir eliges el día y la hora de entrega.</div>' : ''}
             <ul class="facts">
@@ -986,8 +1088,10 @@
             </div>` : ''}
             <div class="seller-card">
               ${avatar(p.sellerName, p.sellerPhoto, 'lg')}
-              <div><small class="muted">Vendido por</small><strong>${esc(p.sellerName)}</strong><span class="muted small">Publicado ${timeAgo(p.createdAt)}</span></div>
+              <div><small class="muted">Vendido por</small><strong>${esc(p.sellerName)}</strong>
+                <span class="muted small" id="seller-stats">${sellerSales(p.sellerId)} ventas · Publicado ${timeAgo(p.createdAt)}</span></div>
             </div>
+            <section class="reviews" id="reviews"><h3>Reseñas</h3><p class="muted small">Cargando…</p></section>
             <div class="buy-bar">
               ${own
                 ? `<button type="button" class="btn btn-ghost btn-lg" id="avail">${isPre(p) ? '📅' : '⚡'} Disponibilidad</button>
@@ -1019,9 +1123,41 @@
       mountGallery(limited ? imgs.slice(0, 1) : imgs);
       if (limited && imgs.length > 1) $('.gallery-main').insertAdjacentHTML('beforeend', `<button type="button" class="more-photos" data-unlock>🔒 +${imgs.length - 1} ${imgs.length === 2 ? 'foto' : 'fotos'}</button>`);
     };
+    loadReviews(p);
     if ((p.images || []).length) showImgs(p.images);
     else B.getImages(id).then(showImgs).catch(() => {});
     view.querySelector('.detail').addEventListener('click', e => { if (e.target.closest('[data-unlock]')) openLogin('info'); });
+  }
+
+  // Reseñas del producto y calificación general del vendedor.
+  async function loadReviews(p) {
+    let prodR = [], sellR = [];
+    try { [prodR, sellR] = await Promise.all([B.listReviews('productId', p.id), B.listReviews('sellerId', p.sellerId)]); }
+    catch (e) { console.warn('reseñas', e); }
+    const box = $('#reviews');
+    if (!box) return;
+    const ss = $('#seller-stats');
+    if (ss && sellR.length) ss.innerHTML = `${starsHtml(avgOf(sellR), 'sm')} <b>${avgOf(sellR).toFixed(1)}</b> (${sellR.length}) · ${sellerSales(p.sellerId)} ventas`;
+    const social = $('#detail-social');
+    if (social && prodR.length) social.insertAdjacentHTML('afterbegin', `<span>${starsHtml(avgOf(prodR), 'sm')} <b>${avgOf(prodR).toFixed(1)}</b> · ${prodR.length} reseña${prodR.length === 1 ? '' : 's'}</span>`);
+    if (!prodR.length) {
+      box.innerHTML = '<h3>Reseñas</h3><p class="muted small">Aún no hay reseñas. Quien compre este producto podrá calificarlo cuando lo reciba.</p>';
+      return;
+    }
+    const avg = avgOf(prodR);
+    const dist = [5, 4, 3, 2, 1].map(n => [n, prodR.filter(r => r.rating === n).length]);
+    const item = r => `<article class="review"><header>${avatar(r.buyerName, '', 'xs')}<b>${esc(r.buyerName)}</b>${starsHtml(r.rating, 'sm')}<time>${timeAgo(r.createdAt)}</time></header>${r.comment ? `<p>${esc(r.comment)}</p>` : ''}</article>`;
+    const draw = all => {
+      box.innerHTML = `<h3>Reseñas</h3>
+        <div class="rv-summary">
+          <div class="rv-avg"><strong>${avg.toFixed(1)}</strong>${starsHtml(avg)}<small class="muted">${prodR.length} reseña${prodR.length === 1 ? '' : 's'}</small></div>
+          <div class="rv-bars">${dist.map(([n, c]) => `<div><span>${n}★</span><i><b style="width:${Math.round(c / prodR.length * 100)}%"></b></i><small>${c}</small></div>`).join('')}</div>
+        </div>
+        <div class="rv-list">${(all ? prodR : prodR.slice(0, 3)).map(item).join('')}</div>
+        ${!all && prodR.length > 3 ? `<button type="button" class="btn btn-ghost btn-sm" data-all-reviews>Ver las ${prodR.length} reseñas</button>` : ''}`;
+      const more = $('[data-all-reviews]', box); if (more) more.onclick = () => draw(true);
+    };
+    draw(false);
   }
 
   function mountGallery(imgs) {
@@ -1211,7 +1347,7 @@
               <h3>Fotos <small class="muted" id="img-count"></small></h3>
               <div class="uploader" id="up"></div>
               <input type="file" id="file" accept="image/*" multiple hidden>
-              <p class="hint">La primera foto es la portada. Toca ★ para cambiarla.</p>
+              <p class="hint">Hasta 4 fotos. <b>Arrástralas para cambiar el orden</b> (en celular, mantén presionada una foto y muévela). La primera es la portada.</p>
             </section>
             <section class="form-sec">
               <h3>Información</h3>
@@ -1316,8 +1452,9 @@
     };
     const drawUp = () => {
       up.innerHTML = images.map((s, i) => `
-        <div class="up-item">
-          <img src="${esc(s)}" alt="">
+        <div class="up-item" data-i="${i}">
+          <img src="${esc(s)}" alt="" draggable="false">
+          <span class="up-num">${i + 1}</span>
           ${i === 0 ? '<span class="up-tag">Portada</span>' : `<button type="button" class="up-cover" data-cover="${i}" aria-label="Usar como portada">${icon('star')}</button>`}
           <button type="button" class="up-del" data-del="${i}" aria-label="Quitar foto">${icon('x')}</button>
         </div>`).join('')
@@ -1342,6 +1479,70 @@
       if (cov) { const [img] = images.splice(Number(cov.dataset.cover), 1); images.unshift(img); drawUp(); }
     };
     file.onchange = () => { addFiles(file.files); file.value = ''; };
+    // Ordenar arrastrando: con mouse se mueve de inmediato; con el dedo, tras mantener presionado
+    // un momento (así no estorba al deslizar la página).
+    let drag = null;
+    const stopScroll = e => { if (drag && drag.active) e.preventDefault(); };
+    // Quita los controles de un editor anterior para que no se acumulen.
+    if (state.dragOff) state.dragOff();
+    const itemAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest('#up .up-item'); };
+    const startDrag = () => {
+      drag.active = true;
+      const r = drag.el.getBoundingClientRect();
+      drag.ghost = drag.el.cloneNode(true);
+      drag.ghost.classList.add('up-ghost');
+      Object.assign(drag.ghost.style, { width: r.width + 'px', height: r.height + 'px', left: r.left + 'px', top: r.top + 'px' });
+      drag.dx = drag.x0 - r.left; drag.dy = drag.y0 - r.top;
+      document.body.append(drag.ghost);
+      drag.el.classList.add('up-dragging');
+      up.classList.add('sorting');
+      try { navigator.vibrate && navigator.vibrate(20); } catch {}
+    };
+    up.addEventListener('pointerdown', e => {
+      const item = e.target.closest('.up-item');
+      if (!item || e.target.closest('button') || images.length < 2) return;
+      drag = { el: item, from: Number(item.dataset.i), to: Number(item.dataset.i), x0: e.clientX, y0: e.clientY, active: false, touch: e.pointerType !== 'mouse' };
+      if (drag.touch) drag.timer = setTimeout(() => { if (drag) startDrag(); }, 220);
+    });
+    const onMove = e => {
+      if (!drag) return;
+      if (!drag.active) {
+        const moved = Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0);
+        if (drag.touch) { if (moved > 10) { clearTimeout(drag.timer); drag = null; } return; } // estaba deslizando la página
+        if (moved < 6) return;
+        startDrag();
+      }
+      drag.ghost.style.left = (e.clientX - drag.dx) + 'px';
+      drag.ghost.style.top = (e.clientY - drag.dy) + 'px';
+      const over = itemAt(e.clientX, e.clientY);
+      $$('.up-item', up).forEach(x => x.classList.toggle('up-target', x === over && x !== drag.el));
+      if (over) drag.to = Number(over.dataset.i);
+    };
+    const endDrag = () => {
+      if (!drag) return;
+      clearTimeout(drag.timer);
+      if (drag.active) {
+        drag.ghost.remove();
+        up.classList.remove('sorting');
+        if (drag.to !== drag.from) {
+          const [img] = images.splice(drag.from, 1);
+          images.splice(drag.to, 0, img);
+          drawUp();
+          if (drag.to === 0 || drag.from === 0) toast('Portada actualizada 📸', 'info', 1800);
+        } else drawUp();
+      }
+      drag = null;
+    };
+    document.addEventListener('touchmove', stopScroll, { passive: false });
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    state.dragOff = () => {
+      document.removeEventListener('touchmove', stopScroll);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+    };
     up.ondragover = e => { e.preventDefault(); up.classList.add('drag'); };
     up.ondragleave = () => up.classList.remove('drag');
     up.ondrop = e => { e.preventDefault(); up.classList.remove('drag'); addFiles(e.dataTransfer.files); };
@@ -1494,7 +1695,8 @@
         <div class="stat wide hero-stat"><span class="stat-ic">${icon('cash')}</span><div><small>Ventas de hoy</small><strong>${money(todayTotal)}</strong><small>${todays.length} ${todays.length === 1 ? 'pedido' : 'pedidos'} hoy · ${todays.filter(o => o.status === 'entregado').length} entregado(s)</small></div></div>
         ${stat('Publicaciones activas', mine.filter(p => p.active !== false).length, 'box', 'brand')}
         ${stat('Pedidos pendientes', pending.length, 'bell', 'warn')}
-        ${stat('Ventas entregadas', delivered.length, 'check', 'ok')}
+        ${stat('Ventas totales', delivered.length, 'check', 'ok')}
+        <div class="stat star-stat" id="stat-rating"><span class="stat-ic">★</span><div><strong>—</strong><small>Calificación</small></div></div>
         ${stat('Ingresos totales', money(revenue), 'cash', 'info')}
       </div>
       <div class="two-col">
@@ -1511,6 +1713,12 @@
             : emptyState('🛒', 'Aún no vendes nada', 'Publica tu primer producto en menos de un minuto.', '<a class="btn btn-primary" href="#/vender">Publicar</a>')}
         </section>
       </div>`;
+    // Calificación promedio del vendedor (de sus reseñas públicas).
+    B.listReviews('sellerId', state.user.uid).then(list => {
+      const box = $('#stat-rating strong'); if (!box) return;
+      box.textContent = list.length ? `${avgOf(list).toFixed(1)} ★` : 'Sin reseñas';
+      $('#stat-rating small').textContent = list.length ? `Calificación · ${list.length} reseña${list.length === 1 ? '' : 's'}` : 'Calificación';
+    }).catch(() => {});
   }
 
   async function tabPublicaciones(el, fresh) {
@@ -1624,6 +1832,11 @@
       else if (o.status === 'aceptado') actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="seller-cancel" data-id="${o.id}">Cancelar</button><button type="button" class="btn btn-ok btn-sm" data-act="deliver" data-id="${o.id}">${icon('check')} Entregado</button>`;
     } else if (o.status === 'pendiente' && !o.cachedOnly) {
       actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="cancel" data-id="${o.id}">Cancelar pedido</button>`;
+    } else if (o.status === 'entregado' && !o.cachedOnly && state.myReviews) {
+      const mine = state.myReviews.get(o.id);
+      actions = mine
+        ? `<span class="my-rating">Tu calificación ${starsHtml(mine, 'sm')}</span>`
+        : `<button type="button" class="btn btn-primary btn-sm" data-act="review" data-id="${o.id}">★ Calificar</button>`;
     }
     const fk = role === 'seller' ? fakeCheck(o, state.sellerOrders) : { suspect: false, reasons: [] };
     return `<article class="order st-${o.status} ${compact ? 'compact' : ''} ${fk.suspect ? 'suspect' : ''}" ${compact && role === 'seller' && (o.status === 'pendiente' || o.status === 'aceptado') ? `draggable="true" data-drag="${o.id}"` : ''}>
@@ -1675,8 +1888,15 @@
         await busy(btn, async () => { await B.updateOrder(id, { status: 'aceptado', ...extra }); await adjustStock(-o.qty); });
         toast('Pedido aceptado. ¡Coordina la entrega! ✅');
       } else if (act === 'deliver') {
-        await busy(btn, () => B.updateOrder(id, { status: 'entregado' }));
-        toast('¡Venta completada! 🎉');
+        await busy(btn, async () => {
+          await B.updateOrder(id, { status: 'entregado' });
+          // Suma la venta al contador público del producto.
+          try { const p = await B.getProduct(o.productId); if (p) await B.updateProduct(p.id, { sold: (p.sold || 0) + o.qty }); }
+          catch (e) { console.warn('ventas', e); }
+        });
+        toast('¡Venta completada! 🎉 El comprador ya puede calificarte.');
+      } else if (act === 'review') {
+        openReview(o);
       } else if (act === 'reject') {
         if (!await confirmDialog({ title: '¿Rechazar pedido?', text: `El pedido de ${o.buyerName} se marcará como rechazado.`, ok: 'Rechazar', danger: true })) return;
         await B.updateOrder(id, { status: 'rechazado' });
@@ -1790,7 +2010,55 @@
     };
   }
 
+  // Ventana para calificar un pedido entregado (una sola vez).
+  function openReview(o) {
+    let rating = 0;
+    const labels = ['', 'Muy malo', 'Malo', 'Regular', 'Bueno', '¡Excelente!'];
+    const m = openModal(`
+      <form class="review-form" novalidate>
+        <h2>Califica tu compra</h2>
+        <div class="order-item"><div class="order-thumb" style="--c:${cat(o.category).color}">${media(o)}</div><div><strong>${esc(o.productTitle)}</strong><span class="muted small">Vendido por ${esc(o.sellerName)}</span></div></div>
+        <div class="star-pick" role="radiogroup" aria-label="Calificación">${[1, 2, 3, 4, 5].map(i => `<button type="button" data-star="${i}" aria-label="${i} estrellas">★</button>`).join('')}</div>
+        <p class="star-label muted center" id="star-label">Toca las estrellas</p>
+        <label class="field"><span>Cuéntales a los demás <em>opcional</em></span><textarea name="comment" rows="3" maxlength="300" placeholder="¿Cómo estuvo el producto y la entrega?"></textarea></label>
+        <p class="legal-note">Tu reseña es pública y aparece con tu nombre corto: <b>${esc(shortName(o.buyerName))}</b>. No se puede editar después.</p>
+        <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit disabled>Publicar reseña</button>
+      </form>`, { cls: 'modal-sm' });
+    const form = $('form', m.el);
+    const paint = n => $$('[data-star]', form).forEach(b => b.classList.toggle('on', Number(b.dataset.star) <= n));
+    $('.star-pick', form).addEventListener('mouseover', e => { const b = e.target.closest('[data-star]'); if (b) paint(Number(b.dataset.star)); });
+    $('.star-pick', form).addEventListener('mouseleave', () => paint(rating));
+    $('.star-pick', form).onclick = e => {
+      const b = e.target.closest('[data-star]'); if (!b) return;
+      rating = Number(b.dataset.star); paint(rating);
+      $('#star-label', form).textContent = labels[rating];
+      $('[data-submit]', form).disabled = false;
+    };
+    form.onsubmit = e => {
+      e.preventDefault();
+      if (!rating) return;
+      busy($('[data-submit]', form), async () => {
+        try {
+          await B.createReview(o.id, { productId: o.productId, sellerId: o.sellerId, buyerId: state.user.uid, buyerName: shortName(o.buyerName),
+            rating, comment: form.elements.comment.value.trim(), productTitle: o.productTitle });
+          (state.myReviews = state.myReviews || new Map()).set(o.id, rating);
+          m.close();
+          toast('¡Gracias por tu reseña! ⭐');
+          refreshPanel(['compras']);
+        } catch (err) { toast(errMsg(err), 'err'); }
+      });
+    };
+  }
+
   function tabCompras(el) {
+    // Reseñas que ya dejé (para mostrar "Calificar" solo donde falta).
+    if (state.user && !state.myReviewsLoading && (!state.myReviews || state.myReviewsUid !== state.user.uid)) {
+      state.myReviewsLoading = true;
+      B.listReviews('buyerId', state.user.uid)
+        .then(list => { state.myReviews = new Map(list.map(r => [r.id, r.rating])); state.myReviewsUid = state.user.uid; })
+        .catch(() => { state.myReviews = new Map(); })
+        .finally(() => { state.myReviewsLoading = false; refreshPanel(['compras']); });
+    }
     // Pedidos en vivo + los guardados en este dispositivo (por ejemplo, hechos como invitado).
     const live = state.buyerOrders;
     const ids = new Set(live.map(o => o.id));
@@ -1941,7 +2209,7 @@
     const ig = $('[data-footer="instagram"]');
     if (ig && L.instagram) { ig.href = L.instagram; ig.hidden = false; }
     const ct = $('[data-footer="contact"]');
-    if (ct && L.contactEmail) { ct.href = `mailto:${L.contactEmail}`; ct.hidden = false; }
+    if (ct && L.contactEmail) { ct.href = `mailto:${L.contactEmail}`; ct.textContent = `✉️ ${L.contactEmail}`; ct.hidden = false; }
     const cp = $('[data-footer="copy"]');
     if (cp) cp.innerHTML = `© ${new Date().getFullYear()} ${esc(C.appName)} · Un proyecto de ${L.ownerUrl
       ? `<a href="${esc(L.ownerUrl)}" target="_blank" rel="noopener">${esc(L.owner || 'Kodoxa')}</a>` : esc(L.owner || '')}`;

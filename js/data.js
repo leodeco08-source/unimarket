@@ -167,6 +167,13 @@
       setImages: (id, images, sellerId) => col('productImages').doc(id).set({ images, sellerId }),
 
       async createOrder(data) { return (await col('orders').add({ ...data, createdAt: now(), updatedAt: now() })).id; },
+      // Reseñas: una por pedido entregado (el id de la reseña es el id del pedido).
+      createReview: (orderId, data) => col('reviews').doc(orderId).set({ ...data, createdAt: now() }),
+      async listReviews(field, value) {
+        return byNewest((await col('reviews').where(field, '==', value).limit(200).get()).docs.map(toObj));
+      },
+      // Las reseñas más recientes de todos (para mostrar las estrellas de cada vendedor en el catálogo).
+      async listAllReviews() { return (await col('reviews').orderBy('createdAt', 'desc').limit(500).get()).docs.map(toObj); },
       updateOrder: (id, data) => col('orders').doc(id).update({ ...data, updatedAt: now() }),
       watchOrders(field, uid, cb) {
         return col('orders').where(field, '==', uid).onSnapshot(
@@ -316,6 +323,15 @@
       getImages: async id => (ls.get(K.i, {})[id] || {}).images || [],
       async setImages(id, images, sellerId) { const all = ls.get(K.i, {}); all[id] = { images, sellerId }; ls.set(K.i, all); },
 
+      async createReview(orderId, data) {
+        const all = ls.get('cm_reviews', []);
+        if (all.some(r => r.id === orderId)) throw mkErr('permission-denied');
+        all.push({ ...data, id: orderId, createdAt: Date.now() });
+        ls.set('cm_reviews', all);
+        return wait();
+      },
+      listReviews: async (field, value) => byNewest(ls.get('cm_reviews', []).filter(r => r[field] === value)),
+      listAllReviews: async () => byNewest(ls.get('cm_reviews', [])),
       async createOrder(data) {
         const id = newId();
         ls.set(K.o, [...orders(), { ...data, id, createdAt: Date.now(), updatedAt: Date.now() }]);
@@ -360,6 +376,7 @@
       spot: str(p.spot, 60), schedule: str(p.schedule, 60), phone: str(p.phone, 20),
       payments: strList(p.payments, 4, 20), active: p.active !== false,
       thumb: imgUrl(p.thumb), images: (Array.isArray(p.images) ? p.images.slice(0, 4).map(imgUrl).filter(Boolean) : []),
+      sold: int(p.sold, 0, 1e7),
       createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
     };
   }
@@ -381,6 +398,11 @@
       createdAt: ms(o.createdAt), updatedAt: ms(o.updatedAt),
     };
   }
+  function cleanReview(r) {
+    if (!r || !ID_RE.test(String(r.id || ''))) return null;
+    return { id: r.id, productId: str(r.productId, 64), sellerId: str(r.sellerId, 128), buyerId: str(r.buyerId, 128),
+      buyerName: str(r.buyerName, 40), rating: int(r.rating, 1, 5), comment: str(r.comment, 300), productTitle: str(r.productTitle, 80), createdAt: ms(r.createdAt) };
+  }
   const cleanList = (list, fn) => (list || []).map(fn).filter(Boolean);
 
   function harden(b) {
@@ -390,6 +412,8 @@
       getProduct: async id => (ID_RE.test(String(id)) ? cleanProduct(await b.getProduct(id)) : null),
       myProducts: async uid => cleanList(await b.myProducts(uid), cleanProduct),
       getImages: async id => (ID_RE.test(String(id)) ? (await b.getImages(id) || []).slice(0, 4).map(imgUrl).filter(Boolean) : []),
+      listReviews: async (field, value) => cleanList(await b.listReviews(field, value), cleanReview),
+      listAllReviews: async () => cleanList(await b.listAllReviews(), cleanReview),
       watchProducts: (cb, onErr) => b.watchProducts(list => cb(cleanList(list, cleanProduct)), onErr),
       watchOrders: (field, uid, cb) => b.watchOrders(field, uid, list => cb(cleanList(list, cleanOrder))),
       getPrivate: async uid => { const x = (await b.getPrivate(uid)) || {}; return { ...x, transfer: cleanTransfer(x.transfer), transferInfo: str(x.transferInfo, 400) }; },

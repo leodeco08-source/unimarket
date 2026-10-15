@@ -871,3 +871,124 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
    el aviso obligatorio de Google está en el pie de página. */
 .grecaptcha-badge { visibility: hidden !important; }
 .footer-bottom { flex-wrap: wrap; }
+
+/* Ordenar fotos arrastrando */
+.up-item { cursor: grab; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; transition: transform .15s, opacity .15s, box-shadow .15s; }
+.up-item img { pointer-events: none; }
+.up-num { position: absolute; right: 6px; bottom: 6px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 99px; background: rgba(10,10,20,.65); color: #fff; font-size: 12px; font-weight: 800; display: grid; place-items: center; }
+.up-item.up-dragging { opacity: .3; }
+.up-item.up-target { box-shadow: 0 0 0 3px var(--brand); transform: scale(.95); }
+.up-ghost { position: fixed; z-index: 300; pointer-events: none; border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-lg); transform: scale(1.06) rotate(-2deg); opacity: .95; animation: none; }
+.uploader.sorting { cursor: grabbing; }
+
+/* =========================================================
+   Reseñas, ventas y fotos en tarjetas
+   ========================================================= */
+.stars { display: inline-flex; gap: 1px; color: var(--line); font-size: 15px; line-height: 1; vertical-align: -1px; }
+.stars i { font-style: normal; }
+.stars i.on { color: #f5a524; }
+.stars.sm { font-size: 13px; }
+.card-photos { position: absolute; right: 8px; bottom: 8px; display: inline-flex; align-items: center; gap: 3px; background: rgba(10,10,25,.65); color: #fff; font-size: 11px; font-weight: 700; padding: 3px 7px; border-radius: 99px; }
+.card-photos .ic { width: 12px; height: 12px; }
+.card-price { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.card-sold { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: 0; }
+.detail-social { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 6px; font-size: 13.5px; color: var(--muted); }
+.detail-social:empty { display: none; }
+.detail-social b { color: var(--text); }
+#seller-stats { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+
+.reviews { margin: 4px 0 18px; padding: 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--surface); }
+.reviews h3 { font-size: 16px; margin-bottom: 10px; }
+.rv-summary { display: flex; gap: 18px; align-items: center; margin-bottom: 12px; }
+.rv-avg { display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 86px; }
+.rv-avg strong { font-size: 34px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.rv-bars { flex: 1; display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
+.rv-bars div { display: flex; align-items: center; gap: 6px; }
+.rv-bars span { width: 22px; }
+.rv-bars i { flex: 1; height: 7px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.rv-bars b { display: block; height: 100%; background: #f5a524; border-radius: 99px; }
+.rv-bars small { width: 18px; text-align: right; }
+.rv-list { display: flex; flex-direction: column; }
+.review { padding: 10px 0; border-top: 1px solid var(--line); }
+.review header { display: flex; align-items: center; gap: 7px; font-size: 13.5px; flex-wrap: wrap; }
+.review time { margin-left: auto; color: var(--muted); font-size: 12px; }
+.review p { margin: 6px 0 0; font-size: 14px; color: color-mix(in srgb, var(--text) 85%, var(--muted)); }
+.reviews .btn { margin-top: 8px; }
+
+.review-form { display: flex; flex-direction: column; gap: 12px; }
+.review-form h2 { margin-bottom: 0; }
+.star-pick { display: flex; justify-content: center; gap: 6px; margin-top: 6px; }
+.star-pick button { border: 0; background: none; font-size: 42px; line-height: 1; color: var(--line); padding: 2px; transition: transform .12s, color .12s; }
+.star-pick button.on { color: #f5a524; }
+.star-pick button:hover { transform: scale(1.12); }
+.star-pick button:active { transform: scale(.9); }
+.star-label { margin: -4px 0 0; font-weight: 700; min-height: 1.4em; }
+.my-rating { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 600; }
+.star-stat .stat-ic { background: #fff4dc; color: #f5a524; font-size: 20px; }
+
+/* =========================================================
+   Portada v2: categorías estilo Uber Eats, secciones deslizables,
+   tarjetas estilo Marketplace, HOT y Nuevo vendedor
+   ========================================================= */
+/* Barra de categorías */
+.cat-rail { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 14px -16px 4px; padding: 6px 16px 10px; scroll-snap-type: x proximity; scroll-padding-inline: 16px; }
+.cat-rail::-webkit-scrollbar { display: none; }
+.cat-tile { flex: none; width: 76px; display: flex; flex-direction: column; align-items: center; gap: 6px; border: 0; background: none; padding: 0; scroll-snap-align: start; color: var(--text); }
+.cat-ic {
+  width: 62px; height: 62px; border-radius: 20px; display: grid; place-items: center; font-size: 32px;
+  background: color-mix(in srgb, var(--c) 14%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c) 18%, transparent);
+  transition: transform .15s, box-shadow .15s, background .15s;
+  filter: drop-shadow(0 2px 0 rgba(0,0,0,.04));
+}
+.cat-tile:hover .cat-ic { transform: translateY(-2px); }
+.cat-tile:active .cat-ic { transform: scale(.94); }
+.cat-name { font-size: 12.5px; font-weight: 600; text-align: center; line-height: 1.2; color: var(--muted); max-width: 76px; }
+.cat-tile.active .cat-ic { background: color-mix(in srgb, var(--c) 24%, var(--surface)); box-shadow: 0 0 0 2.5px var(--c), 0 6px 16px color-mix(in srgb, var(--c) 30%, transparent); }
+.cat-tile.active .cat-name { color: var(--text); font-weight: 800; }
+@media (min-width: 900px) { .cat-tile { width: 88px; } .cat-ic { width: 70px; height: 70px; font-size: 36px; } .cat-name { max-width: 88px; } }
+
+/* Secciones deslizables */
+.row-sec { margin: 18px 0 8px; }
+.row-sec > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.row-sec h2 { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+.row-sec header small { font-size: 13px; }
+.row-more { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--surface-2); color: var(--text); display: grid; place-items: center; flex: none; transition: background .15s, transform .15s; }
+.row-more:hover { background: var(--brand-soft); color: var(--brand); }
+.row-more .ic { transform: rotate(180deg); }
+.row-scroll { display: grid; grid-auto-flow: column; grid-auto-columns: 46%; gap: 12px; overflow-x: auto; scrollbar-width: none; margin: 0 -16px; padding: 4px 16px 8px; scroll-snap-type: x mandatory; scroll-padding-inline: 16px; }
+.row-scroll::-webkit-scrollbar { display: none; }
+.row-scroll > .card-wrap { scroll-snap-align: start; }
+@media (min-width: 560px) { .row-scroll { grid-auto-columns: 30%; } }
+@media (min-width: 900px) { .row-scroll { grid-auto-columns: 200px; margin: 0; padding: 4px 0 8px; } }
+.all-sec { margin-top: 26px; }
+.toolbar.compact { margin-bottom: 0; }
+
+/* Tarjetas estilo Marketplace */
+.card { background: transparent; border: 0; border-radius: 0; overflow: visible; }
+.card:hover { transform: none; box-shadow: none; }
+.card-media { border-radius: 14px; overflow: hidden; transition: box-shadow .2s; }
+.card-media img { transition: transform .35s ease; }
+.card:hover .card-media img { transform: scale(1.04); }
+.card-body { padding: 8px 2px 4px; gap: 2px; }
+.card-price { font-size: 17px; font-weight: 800; }
+.card-title { font-weight: 500; font-size: 14px; min-height: 0; -webkit-line-clamp: 2; }
+.card-meta { font-size: 12.5px; }
+.card-seller { border-top: 0; padding-top: 2px; margin-top: 2px; font-size: 12.5px; color: var(--muted); }
+.card-seller span { font-weight: 500; }
+.seller-star { margin-left: auto; flex: none; font-weight: 700 !important; color: #f5a524; font-size: 12px; }
+.card.skel .card-media { border-radius: 14px; }
+.quick-buy { top: 8px; right: 8px; width: 36px; height: 36px; border-radius: 50%; background: var(--surface); color: var(--text); box-shadow: 0 4px 14px rgba(0,0,0,.18); }
+.quick-buy:hover { background: var(--brand); color: #fff; }
+
+/* Insignias */
+.card-badge { top: 8px; left: 8px; font-size: 11.5px; padding: 4px 9px; }
+.card-badge.low { background: var(--accent); }
+.card-badge.is-hot { background: linear-gradient(135deg, #ef4444, #f97316); box-shadow: 0 4px 12px rgba(239,68,68,.45); letter-spacing: .04em; animation: hot-pulse 2s ease-in-out infinite; }
+.card-badge.is-new { background: linear-gradient(135deg, #7b61ff, #c026d3); box-shadow: 0 4px 12px rgba(123,97,255,.4); }
+@keyframes hot-pulse { 50% { transform: scale(1.06); } }
+
+/* HOT: marco rojo */
+.card-wrap.hot .card-media { box-shadow: 0 0 0 2.5px #ef4444, 0 8px 22px rgba(239,68,68,.28); }
+.card-wrap.hot .card-price { color: #e11d48; }
+/* Nuevo vendedor: marco morado destacado */
+.card-wrap.fresh .card-media { box-shadow: 0 0 0 2.5px #7b61ff, 0 8px 22px rgba(123,97,255,.25); }

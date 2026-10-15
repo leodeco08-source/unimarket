@@ -49,7 +49,7 @@ service cloud.firestore {
     // ---------- Publicaciones ----------
     function validProduct(p) {
       return p.keys().hasOnly(['title', 'price', 'stock', 'category', 'sub', 'mode', 'description', 'spot', 'schedule', 'phone',
-                               'payments', 'active', 'thumb', 'images', 'sellerId', 'sellerName', 'sellerPhoto', 'createdAt', 'updatedAt'])
+                               'payments', 'active', 'thumb', 'images', 'sold', 'sellerId', 'sellerName', 'sellerPhoto', 'createdAt', 'updatedAt'])
         && txt(p.title, 80) && p.title.size() >= 3
         && p.price is number && p.price >= 0 && p.price <= 1000000
         && (p.get('stock', null) == null || (p.stock is int && p.stock >= 0 && p.stock <= 100000))
@@ -60,6 +60,7 @@ service cloud.firestore {
         && p.get('active', true) is bool
         && optTxt(p, 'thumb', 60000)
         && (!p.keys().hasAny(['images']) || (p.images is list && p.images.size() <= 4))
+        && (!p.keys().hasAny(['sold']) || (p.sold is int && p.sold >= 0 && p.sold <= 10000000))
         && txt(p.sellerName, 60) && optTxt(p, 'sellerPhoto', 500);
     }
     match /products/{id} {
@@ -134,6 +135,24 @@ service cloud.firestore {
             && d().updatedAt == request.time)
         );
       allow delete: if false;
+    }
+
+    // ---------- Reseñas ----------
+    // Una por pedido (el id de la reseña es el id del pedido), solo del comprador y solo si ya se entregó.
+    function orderOf(oid) { return get(/databases/$(database)/documents/orders/$(oid)).data; }
+    match /reviews/{orderId} {
+      allow read: if true;
+      allow create: if signedIn()
+        && d().keys().hasOnly(['productId', 'sellerId', 'buyerId', 'buyerName', 'rating', 'comment', 'productTitle', 'createdAt'])
+        && d().buyerId == request.auth.uid
+        && d().rating is int && d().rating >= 1 && d().rating <= 5
+        && txt(d().comment, 300) && txt(d().buyerName, 40) && txt(d().productTitle, 80)
+        && d().createdAt == request.time
+        && orderOf(orderId).buyerId == request.auth.uid
+        && orderOf(orderId).status == 'entregado'
+        && orderOf(orderId).productId == d().productId
+        && orderOf(orderId).sellerId == d().sellerId;
+      allow update, delete: if false;
     }
 
     // Todo lo demás está cerrado
