@@ -23,7 +23,10 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Reseñas**: el comprador califica (1–5 ★ y comentario) cuando su pedido se entrega; una por pedido. Se muestran en el producto y como estrellas del vendedor en el catálogo.
 - **Ventas totales**: al marcar un pedido como entregado se suma al contador "vendidos" del producto y al total del vendedor.
 - **Fotos**: hasta 4 por producto; se ordenan arrastrando (en celular, manteniendo presionado). La primera es la portada.
-- **Portada estilo Uber Eats / Marketplace**: categorías con íconos, una sección deslizable por categoría, 🔥 HOT para lo más vendido (marco rojo, arriba) y ✨ Nuevo para la primera publicación de vendedores nuevos (`hotMinSold`, `hotTop`, `newSellerDays` en `js/config.js`).
+- **Portada**: barra de categorías ligera; en "Todo" una sola cuadrícula ordenada por 🔥 HOT → ✨ Nuevo vendedor → mejores reseñas → más recientes (`hotMinSold`, `hotTop`, `newSellerDays` en `js/config.js`).
+- **Reportes**: botón para reportar una publicación o a un vendedor (uno por persona y cosa reportada). Se atienden en el panel de administración.
+- **Soporte y sugerencias**: formulario que guarda el mensaje y lo envía a soporte@hiusu.com (`api/support.js`, variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` en Vercel).
+- **Moderación**: avisos, suspensiones y baneos que pone el panel de administración; las reglas bloquean publicar, pedir y calificar a quien esté sancionado.
 - **Cobro por transferencia**: el vendedor elige UNA forma de cobro, CLABE (se valida y detecta el banco) o número de tarjeta, y la captura una sola vez con el titular; se guardan en privado y se usan en todas sus ventas. Al aceptar un pedido con transferencia, el comprador ve cada dato con su botón de copiar, el monto y una referencia del pedido.
 - **Compra sin cuenta (invitado)**: el comprador llena nombre, WhatsApp y matrícula opcional. Sus pedidos se guardan en su dispositivo y, si después inicia sesión, pasan a su cuenta. Requiere activar **Anónimo** en Firebase → Authentication → Sign-in method. Se apaga con `guestCheckout: false`.
 - **Más info con cuenta**: a los invitados se les muestra la descripción recortada, una sola foto y sin WhatsApp del vendedor (`limitGuestDetails` en `js/config.js`).

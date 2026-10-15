@@ -172,6 +172,14 @@
       async listReviews(field, value) {
         return byNewest((await col('reviews').where(field, '==', value).limit(200).get()).docs.map(toObj));
       },
+      // Reportes (una por persona y por cosa reportada) y mensajes de soporte: solo los leen los administradores.
+      async createReport(id, data) {
+        try { await col('reports').doc(id).set({ ...data, createdAt: now() }); }
+        catch (e) { if (e.code === 'permission-denied') throw mkErr('app/already-reported'); throw e; }
+      },
+      createSupport: data => col('support').add({ ...data, createdAt: now() }),
+      // Estado de moderación propio (aviso, suspensión o baneo) que ponen los administradores.
+      async getModeration(uid) { const d = await col('moderation').doc(uid).get(); return d.exists ? toObj(d) : null; },
       // Las reseñas más recientes de todos (para mostrar las estrellas de cada vendedor en el catálogo).
       async listAllReviews() { return (await col('reviews').orderBy('createdAt', 'desc').limit(500).get()).docs.map(toObj); },
       updateOrder: (id, data) => col('orders').doc(id).update({ ...data, updatedAt: now() }),
@@ -332,6 +340,13 @@
       },
       listReviews: async (field, value) => byNewest(ls.get('cm_reviews', []).filter(r => r[field] === value)),
       listAllReviews: async () => byNewest(ls.get('cm_reviews', [])),
+      async createReport(id, data) {
+        const all = ls.get('cm_reports', []);
+        if (all.some(r => r.id === id)) throw mkErr('app/already-reported');
+        all.push({ ...data, id, createdAt: Date.now() }); ls.set('cm_reports', all); return wait();
+      },
+      async createSupport(data) { const all = ls.get('cm_support', []); all.push({ ...data, id: newId(), createdAt: Date.now() }); ls.set('cm_support', all); return wait(); },
+      getModeration: async uid => ls.get('cm_moderation', {})[uid] || null,
       async createOrder(data) {
         const id = newId();
         ls.set(K.o, [...orders(), { ...data, id, createdAt: Date.now(), updatedAt: Date.now() }]);
@@ -414,6 +429,11 @@
       getImages: async id => (ID_RE.test(String(id)) ? (await b.getImages(id) || []).slice(0, 4).map(imgUrl).filter(Boolean) : []),
       listReviews: async (field, value) => cleanList(await b.listReviews(field, value), cleanReview),
       listAllReviews: async () => cleanList(await b.listAllReviews(), cleanReview),
+      async getModeration(uid) {
+        const m = await b.getModeration(uid);
+        if (!m) return null;
+        return { status: ['warned', 'suspended', 'banned'].includes(m.status) ? m.status : 'ok', reason: str(m.reason, 200), message: str(m.message, 1000), until: ms(m.until) || 0, updatedAt: ms(m.updatedAt) };
+      },
       watchProducts: (cb, onErr) => b.watchProducts(list => cb(cleanList(list, cleanProduct)), onErr),
       watchOrders: (field, uid, cb) => b.watchOrders(field, uid, list => cb(cleanList(list, cleanOrder))),
       getPrivate: async uid => { const x = (await b.getPrivate(uid)) || {}; return { ...x, transfer: cleanTransfer(x.transfer), transferInfo: str(x.transferInfo, 400) }; },

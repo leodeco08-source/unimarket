@@ -17,7 +17,19 @@ service cloud.firestore {
     function realUser() { return allowedUser() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
     // Para vender: con correo y contraseña, el correo debe estar verificado (Google ya viene verificado).
     function canSell() {
-      return realUser() && (request.auth.token.firebase.sign_in_provider != 'password' || request.auth.token.email_verified == true);
+      return realUser() && notBanned() && (request.auth.token.firebase.sign_in_provider != 'password' || request.auth.token.email_verified == true);
+    }
+
+    // ---------- Administradores y moderación ----------
+    // Un administrador es quien tiene un documento en /admins/{su uid}. Esa colección NO se puede
+    // escribir desde la página: los administradores se agregan a mano en la consola de Firebase.
+    function isAdmin() { return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)); }
+    // Baneado o suspendido (mientras dure la suspensión) = no puede publicar, pedir, calificar ni reportar.
+    function notBanned() {
+      let path = /databases/$(database)/documents/moderation/$(request.auth.uid);
+      return !exists(path)
+        || get(path).data.status in ['ok', 'warned']
+        || (get(path).data.status == 'suspended' && get(path).data.until < request.time);
     }
 
     // ---------- Ayudas de validación ----------
@@ -32,7 +44,7 @@ service cloud.firestore {
         && (!p.keys().hasAny(['payments']) || (p.payments is list && p.payments.size() <= 2));
     }
     match /users/{uid} {
-      allow read: if isMe(uid);
+      allow read: if isMe(uid) || isAdmin();
       allow create, update: if isMe(uid) && realUser() && validProfile(d());
       allow delete: if false;
 
@@ -67,10 +79,14 @@ service cloud.firestore {
       allow read: if true;
       allow create: if canSell() && d().sellerId == request.auth.uid && validProduct(d())
         && d().createdAt == request.time && d().updatedAt == request.time;
-      allow update: if isMe(resource.data.sellerId) && d().sellerId == resource.data.sellerId
+      allow update: if isMe(resource.data.sellerId) && notBanned() && d().sellerId == resource.data.sellerId
         && d().createdAt == resource.data.createdAt && d().updatedAt == request.time
         && validProduct(d());
-      allow delete: if isMe(resource.data.sellerId);
+      // Un administrador solo puede ocultar o volver a mostrar una publicación (no editarla).
+      allow update: if isAdmin() && d().diff(resource.data).affectedKeys().hasOnly(['active', 'updatedAt'])
+        && d().active is bool && d().updatedAt == request.time;
+      // El vendedor borra sus publicaciones; un administrador puede quitar cualquiera (moderación).
+      allow delete: if isMe(resource.data.sellerId) || isAdmin();
     }
 
     // Fotos de versiones anteriores (antes de ImgBB)
@@ -118,9 +134,10 @@ service cloud.firestore {
 
     // Solo los ven el comprador (con cuenta o invitado) y el vendedor
     match /orders/{id} {
+      // Comprador, vendedor o un administrador (para revisar reportes de estafa).
       allow read: if signedIn()
-        && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
-      allow create: if allowedUser() && validNewOrder(d());
+        && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid || isAdmin());
+      allow create: if allowedUser() && notBanned() && validNewOrder(d());
       allow update: if signedIn() && (
           // El vendedor: solo cambia el estado (en orden lógico) y adjunta sus datos para cobrar
           (resource.data.sellerId == request.auth.uid
@@ -142,7 +159,7 @@ service cloud.firestore {
     function orderOf(oid) { return get(/databases/$(database)/documents/orders/$(oid)).data; }
     match /reviews/{orderId} {
       allow read: if true;
-      allow create: if signedIn()
+      allow create: if signedIn() && notBanned()
         && d().keys().hasOnly(['productId', 'sellerId', 'buyerId', 'buyerName', 'rating', 'comment', 'productTitle', 'createdAt'])
         && d().buyerId == request.auth.uid
         && d().rating is int && d().rating >= 1 && d().rating <= 5
@@ -152,7 +169,55 @@ service cloud.firestore {
         && orderOf(orderId).status == 'entregado'
         && orderOf(orderId).productId == d().productId
         && orderOf(orderId).sellerId == d().sellerId;
+      allow update: if false;
+      allow delete: if isAdmin();   // moderación de reseñas ofensivas
+    }
+
+    // ---------- Administración ----------
+    match /admins/{uid} {
+      allow read: if isMe(uid);
+      allow write: if false;        // solo desde la consola de Firebase
+    }
+    // Avisos, suspensiones y baneos: los pone un administrador; el usuario solo puede ver el suyo.
+    match /moderation/{uid} {
+      allow read: if isMe(uid) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Historial de acciones de los administradores: se puede agregar, nunca editar ni borrar.
+    match /auditLog/{id} {
+      allow read: if isAdmin();
+      allow create: if isAdmin()
+        && d().keys().hasOnly(['adminUid', 'adminEmail', 'action', 'targetType', 'targetId', 'targetName', 'details', 'at'])
+        && d().adminUid == request.auth.uid && d().at == request.time
+        && txt(d().action, 40) && txt(d().targetType, 20) && txt(d().targetId, 128) && txt(d().targetName, 80) && txt(d().details, 1000);
       allow update, delete: if false;
+    }
+
+    // ---------- Reportes ----------
+    // Uno por persona y por cosa reportada (el id lo deja claro); solo los administradores los leen.
+    match /reports/{id} {
+      allow create: if signedIn() && notBanned()
+        && id == request.auth.uid + '_' + d().targetType + '_' + d().targetId
+        && d().keys().hasOnly(['reporterId', 'targetType', 'targetId', 'targetName', 'sellerId', 'reason', 'details', 'status', 'createdAt'])
+        && d().reporterId == request.auth.uid
+        && d().targetType in ['product', 'user']
+        && txt(d().targetId, 128) && txt(d().targetName, 80) && txt(d().sellerId, 128)
+        && d().reason in ['prohibido', 'estafa', 'ofensivo', 'falso', 'spam', 'otro']
+        && txt(d().details, 500)
+        && d().status == 'nuevo' && d().createdAt == request.time;
+      allow read, update, delete: if isAdmin();
+    }
+
+    // ---------- Soporte y sugerencias ----------
+    match /support/{id} {
+      allow create: if d().keys().hasOnly(['kind', 'name', 'email', 'message', 'uid', 'page', 'status', 'createdAt'])
+        && d().kind in ['problema', 'sugerencia', 'otro']
+        && txt(d().name, 60) && txt(d().email, 120) && txt(d().page, 200)
+        && txt(d().message, 2000) && d().message.size() >= 5
+        && (d().uid == '' || (signedIn() && d().uid == request.auth.uid))
+        && d().status == 'nuevo' && d().createdAt == request.time;
+      allow read, update, delete: if isAdmin();
     }
 
     // Todo lo demás está cerrado

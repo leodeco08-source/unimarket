@@ -91,6 +91,7 @@ window.HIUSU_LEGAL = function (C) {
           `<ul>
              <li><b>Con la otra parte de tu pedido:</b> el vendedor ve tu nombre, WhatsApp, matrícula (si la diste), nota y detalles del pedido; el comprador ve el nombre y WhatsApp del vendedor y, si aceptó un pago por transferencia, sus datos bancarios.</li>
              <li><b>Proveedores que nos dan servicio</b> (encargados): Google Firebase (inicio de sesión y base de datos), ImgBB (almacenamiento de las fotos, que son públicas), Vercel (alojamiento del sitio) y Google reCAPTCHA (protección contra bots y abusos, que analiza datos técnicos de tu navegador). Pueden estar fuera de México.</li>
+             <li><b>El equipo de administración de ${app}:</b> puede revisar publicaciones, pedidos, reseñas y reportes solo para atender reportes, soporte o abusos. Cada acción queda registrada.</li>
              <li>Autoridades, cuando una ley o una orden lo requiera.</li>
            </ul>
            <p>No vendemos ni rentamos tus datos.</p>`],

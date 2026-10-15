@@ -454,6 +454,7 @@
       : 'Tu navegador bloquea el inicio de sesión. Activa las cookies/almacenamiento del sitio o sal del modo incógnito.',
     'app/domain-not-allowed': 'Solo se permiten correos de: ' + (C.allowedEmailDomains || []).join(', '),
     'app/storage-full': 'El almacenamiento del navegador está lleno (modo demo). Usa menos fotos o conecta Firebase.',
+    'app/already-reported': 'Ya habías reportado esto. Nuestro equipo lo está revisando.',
     'permission-denied': 'No tienes permiso para hacer esto. Revisa las reglas de Firestore.',
   };
   const errMsg = e => (e && e.code in AUTH_ERR) ? AUTH_ERR[e.code] : (e && e.message) || 'Ocurrió un error. Intenta de nuevo.';
@@ -671,7 +672,7 @@
         B.saveProfile(user.uid, state.profile).catch(() => {});
       }
     } else state.profile = null;
-    if (user) { if (!prev || prev.uid !== user.uid) startWatchers(); }
+    if (user) { if (!prev || prev.uid !== user.uid) { state.blocked = null; startWatchers(); checkModeration(); } }
     else stopWatchers();
     renderAccount();
     const after = real ? state.afterLogin : null;
@@ -763,6 +764,7 @@
       <a href="#/panel/pedidos">${icon('inbox')}Pedidos recibidos</a>
       <a href="#/panel/compras">${icon('bag')}Mis compras</a>
       <a href="#/panel/perfil">${icon('user')}Mi perfil</a>
+      <a href="#/soporte">${icon('chat')}Soporte y sugerencias</a>
       <button type="button" data-logout>${icon('logout')}Cerrar sesión</button>`;
     $('#account').append(menu);
     menu.onclick = ev => { if (ev.target.closest('[data-logout]')) logout(); menu.remove(); };
@@ -789,6 +791,7 @@
     else if (path === '/vender') requireAuth(() => renderEditor(null), 'publicar');
     else if ((m = path.match(/^\/editar\/([\w-]+)$/))) requireAuth(() => renderEditor(m[1]), 'publicar');
     else if ((m = path.match(/^\/legal\/(\w+)$/))) renderLegal(m[1]);
+    else if (path === '/soporte') { renderLegal('ayuda'); openSupport(); }
     else if (path === '/panel/compras' && !loggedIn()) renderGuestPurchases();
     else if ((m = path.match(/^\/panel(?:\/(\w+))?$/))) requireAuth(() => renderPanel(m[1] || 'resumen'), 'panel');
     else view.innerHTML = `<div class="container">${emptyState('🧭', 'Página no encontrada', 'El enlace no existe o fue eliminado.', '<a class="btn btn-primary" href="#/">Ir al inicio</a>')}</div>`;
@@ -821,9 +824,10 @@
     if (state.sellerRatings || state.sellerRatingsLoading) return;
     state.sellerRatingsLoading = true;
     B.listAllReviews().then(list => {
-      const m = new Map();
-      list.forEach(r => { const x = m.get(r.sellerId) || { sum: 0, count: 0 }; x.sum += r.rating; x.count++; m.set(r.sellerId, x); });
-      state.sellerRatings = m;
+      const m = new Map(), pm = new Map();
+      const add = (map, k, r) => { const x = map.get(k) || { sum: 0, count: 0 }; x.sum += r.rating; x.count++; map.set(k, x); };
+      list.forEach(r => { add(m, r.sellerId, r); add(pm, r.productId, r); });
+      state.sellerRatings = m; state.productRatings = pm;
       if ($('#feed')) drawGrid();
     }).catch(() => { state.sellerRatings = new Map(); }).finally(() => { state.sellerRatingsLoading = false; });
   }
@@ -864,6 +868,7 @@
 
   // Abre el pedido directo desde el catálogo (pide sesión si hace falta).
   function startOrder(p) {
+    if (isBlocked()) return;
     if (loggedIn()) return openOrder(p);
     if (C.guestCheckout === false) { state.afterLogin = () => openOrder(p); openLogin('comprar'); return; }
     openOrder(p, { guest: true });
@@ -933,7 +938,7 @@
             </label>
             <label class="select-wrap"><span class="sr-only">Ordenar</span>
               <select id="sort">
-                <option value="new" ${f.sort === 'new' ? 'selected' : ''}>Destacados y recientes</option>
+                <option value="new" ${f.sort === 'new' ? 'selected' : ''}>Recomendados</option>
                 <option value="sold" ${f.sort === 'sold' ? 'selected' : ''}>Más vendidos</option>
                 <option value="low" ${f.sort === 'low' ? 'selected' : ''}>Menor precio</option>
                 <option value="high" ${f.sort === 'high' ? 'selected' : ''}>Mayor precio</option>
@@ -989,42 +994,22 @@
     const q = normTxt(f.q);
     const visible = state.products.filter(p => p.active !== false);
     const byNew = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
-    // Destacados primero: HOT, luego nuevos vendedores, luego lo más reciente.
-    const featured = (a, b) => (rk.hot.has(b.id) - rk.hot.has(a.id)) || (rk.fresh.has(b.id) - rk.fresh.has(a.id)) || byNew(a, b);
+    // Calificación de un producto (si no tiene, la de su vendedor).
+    const ratingOf = p => {
+      const r = (state.productRatings && state.productRatings.get(p.id)) || (state.sellerRatings && state.sellerRatings.get(p.sellerId));
+      return r ? r.sum / r.count : 0;
+    };
+    // Orden de "Todo": [Destacado pagado — próximamente] → 🔥 HOT → ✨ Nuevo vendedor → mejores reseñas → más recientes.
+    const featured = (a, b) => (rk.hot.has(b.id) - rk.hot.has(a.id)) || (rk.hot.has(a.id) && rk.hot.has(b.id) ? (b.sold - a.sold) : 0)
+      || (rk.fresh.has(b.id) - rk.fresh.has(a.id)) || (ratingOf(b) - ratingOf(a)) || byNew(a, b);
     const sorter = { low: (a, b) => a.price - b.price, high: (a, b) => b.price - a.price, sold: (a, b) => (b.sold || 0) - (a.sold || 0) || byNew(a, b) }[f.sort] || featured;
     const card = p => productCard(p, undefined, { quick: true });
     const sellers = new Set(visible.map(p => p.sellerId)).size;
     const hs = $('#hero-stats');
     if (hs) hs.innerHTML = `<span><b>${visible.length}</b> productos</span><span><b>${sellers}</b> vendedores</span><span><span class="live-dot"></span>En vivo</span>`;
 
-    // Vista "explorar" (estilo Uber Eats): una fila deslizable por sección.
-    const browsing = f.cat === 'all' && !q && f.mode === 'all' && f.sort === 'new';
-    $('#toolbar').classList.toggle('compact', browsing);
-    if (browsing) {
-      const row = (title, sub, list, goto) => list.length ? `
-        <section class="row-sec">
-          <header><div><h2>${title}</h2>${sub ? `<small class="muted">${sub}</small>` : ''}</div>
-            ${goto ? `<button type="button" class="row-more" data-goto="${goto}" aria-label="Ver todo">${icon('back')}</button>` : ''}</header>
-          <div class="row-scroll">${list.map(card).join('')}</div>
-        </section>` : '';
-      const hotList = visible.filter(p => rk.hot.has(p.id)).sort((a, b) => b.sold - a.sold);
-      const freshList = visible.filter(p => rk.fresh.has(p.id)).sort(byNew);
-      const sections = [
-        row('🔥 Lo más vendido', 'Lo que todos están pidiendo', hotList, 'hot'),
-        row('✨ Nuevos vendedores', 'Su primera publicación: ¡apóyalos!', freshList, 'new'),
-        ...C.categories.map(c => {
-          const list = visible.filter(p => p.category === c.id).sort(featured);
-          return row(`${c.emoji} ${esc(c.label)}`, `${list.length} ${list.length === 1 ? 'producto' : 'productos'}`, list.slice(0, 12), c.id);
-        }),
-      ].join('');
-      $('#count').textContent = `${visible.length} ${visible.length === 1 ? 'producto' : 'productos'}`;
-      feed.innerHTML = visible.length
-        ? sections + `<section class="row-sec all-sec"><header><div><h2>🏪 Todo lo publicado</h2></div></header><div class="grid">${[...visible].sort(featured).map(card).join('')}</div></section>`
-        : emptyState('🛍️', 'Todavía no hay publicaciones', '¡Sé el primero en vender!', '<a class="btn btn-primary" href="#/vender">Publicar algo</a>');
-      return;
-    }
-
     // Vista de resultados: cuadrícula filtrada.
+    $('#toolbar').classList.remove('compact');
     let list = visible.filter(p => (f.cat === 'all' || f.cat === 'hot' || f.cat === 'new' || p.category === f.cat)
       && (f.cat !== 'hot' || rk.hot.has(p.id))
       && (f.cat !== 'new' || rk.fresh.has(p.id))
@@ -1033,7 +1018,8 @@
       && (!q || normTxt(`${p.title} ${p.description} ${p.sellerName} ${p.spot} ${p.sub || ''}`).includes(q)));
     list.sort(f.cat === 'hot' ? (a, b) => b.sold - a.sold : sorter);
     $('#count').textContent = `${list.length} ${list.length === 1 ? 'producto' : 'productos'}`;
-    const emptyMsg = f.cat === 'hot' ? `Aquí aparecen los productos con ${HOT_MIN} ventas o más.`
+    const emptyMsg = !visible.length ? 'Todavía no hay publicaciones. ¡Sé el primero en vender!'
+      : f.cat === 'hot' ? `Aquí aparecen los productos con ${HOT_MIN} ventas o más.`
       : f.cat === 'new' ? 'Aquí aparece la primera publicación de cada vendedor nuevo.'
       : 'Prueba con otra búsqueda, categoría o modalidad.';
     feed.innerHTML = list.length ? `<div class="grid">${list.map(card).join('')}</div>`
@@ -1092,6 +1078,7 @@
                 <span class="muted small" id="seller-stats">${sellerSales(p.sellerId)} ventas · Publicado ${timeAgo(p.createdAt)}</span></div>
             </div>
             <section class="reviews" id="reviews"><h3>Reseñas</h3><p class="muted small">Cargando…</p></section>
+            ${own ? '' : `<div class="report-links"><button type="button" class="link-btn" data-report="product">⚑ Reportar publicación</button><span>·</span><button type="button" class="link-btn" data-report="user">Reportar al vendedor</button></div>`}
             <div class="buy-bar">
               ${own
                 ? `<button type="button" class="btn btn-ghost btn-lg" id="avail">${isPre(p) ? '📅' : '⚡'} Disponibilidad</button>
@@ -1124,6 +1111,11 @@
       if (limited && imgs.length > 1) $('.gallery-main').insertAdjacentHTML('beforeend', `<button type="button" class="more-photos" data-unlock>🔒 +${imgs.length - 1} ${imgs.length === 2 ? 'foto' : 'fotos'}</button>`);
     };
     loadReviews(p);
+    $$('[data-report]', view).forEach(b => {
+      b.onclick = () => openReport(b.dataset.report === 'product'
+        ? { type: 'product', id: p.id, name: p.title, sellerId: p.sellerId }
+        : { type: 'user', id: p.sellerId, name: p.sellerName, sellerId: p.sellerId });
+    });
     if ((p.images || []).length) showImgs(p.images);
     else B.getImages(id).then(showImgs).catch(() => {});
     view.querySelector('.detail').addEventListener('click', e => { if (e.target.closest('[data-unlock]')) openLogin('info'); });
@@ -1583,6 +1575,7 @@
       if (!ph.ok) return fail(ph.msg);
       d.phone = ph.value;
       if (!d.payments.length) return fail('Elige al menos un método de pago.');
+      if (isBlocked()) return;
       if (!await B.canSell()) {
         errEl.innerHTML = 'Para vender, primero verifica tu correo: te enviamos un enlace a <b>' + esc(state.user.email) + '</b>. Ábrelo y vuelve a tocar “Publicar”. <button type="button" class="link-btn" data-resend>Reenviar correo</button>';
         errEl.hidden = false;
@@ -1896,7 +1889,7 @@
         });
         toast('¡Venta completada! 🎉 El comprador ya puede calificarte.');
       } else if (act === 'review') {
-        openReview(o);
+        if (!isBlocked()) openReview(o);
       } else if (act === 'reject') {
         if (!await confirmDialog({ title: '¿Rechazar pedido?', text: `El pedido de ${o.buyerName} se marcará como rechazado.`, ok: 'Rechazar', danger: true })) return;
         await B.updateOrder(id, { status: 'rechazado' });
@@ -2180,6 +2173,128 @@
     $('#lo').onclick = logout;
   }
 
+  /* ---------------------- reportes ---------------------- */
+  const REPORT_REASONS = [
+    ['prohibido', '🚫 Producto prohibido', 'Alcohol, vapes, armas, tareas hechas…'],
+    ['estafa', '💸 Estafa o fraude', 'No entregó, pidió pago y desapareció…'],
+    ['ofensivo', '🤬 Contenido ofensivo', 'Insultos, acoso, contenido inapropiado'],
+    ['falso', '🎭 Información falsa', 'Fotos o precio engañosos, cuenta falsa'],
+    ['spam', '📢 Spam', 'Publicaciones repetidas o basura'],
+    ['otro', '❓ Otro', 'Cuéntanos qué pasó'],
+  ];
+  async function openReport(t) {
+    const m = openModal(`
+      <form class="report-form" novalidate>
+        <h2>⚑ ${t.type === 'product' ? 'Reportar publicación' : 'Reportar al vendedor'}</h2>
+        <p class="muted small">${t.type === 'product' ? 'Publicación' : 'Vendedor'}: <b>${esc(t.name)}</b>. El reporte es anónimo para el vendedor; solo lo ve el equipo de ${esc(C.appName)}.</p>
+        <div class="reason-list">${REPORT_REASONS.map(([k, label, hint], i) => `
+          <label><input type="radio" name="reason" value="${k}" ${i ? '' : 'checked'}><span><b>${label}</b><small>${hint}</small></span></label>`).join('')}</div>
+        <label class="field"><span>Detalles <em>opcional, ayuda mucho</em></span><textarea name="details" rows="3" maxlength="500" placeholder="¿Qué pasó? Si es una estafa, pon fecha y monto."></textarea></label>
+        <button class="btn btn-danger btn-lg btn-block" type="submit" data-submit>Enviar reporte</button>
+      </form>`, { cls: 'modal-sm' });
+    const form = $('form', m.el);
+    form.onsubmit = e => {
+      e.preventDefault();
+      busy($('[data-submit]', form), async () => {
+        try {
+          // Los invitados reportan con su sesión anónima (así evitamos reportes masivos sin rastro).
+          const uid = (state.user && state.user.uid) || (await B.loginAnonymous()).uid;
+          await B.createReport(`${uid}_${t.type}_${t.id}`, {
+            reporterId: uid, targetType: t.type, targetId: t.id, targetName: String(t.name || '').slice(0, 80), sellerId: t.sellerId || '',
+            reason: form.elements.reason.value, details: form.elements.details.value.trim().slice(0, 500), status: 'nuevo',
+          });
+          m.close();
+          toast('Gracias por avisarnos. Revisaremos el reporte 🛡️');
+        } catch (err) { toast(errMsg(err), err.code === 'app/already-reported' ? 'info' : 'err', 5000); }
+      });
+    };
+  }
+
+  /* ---------------------- soporte y sugerencias ---------------------- */
+  function openSupport() {
+    if ($('.support-form')) return;
+    const m = openModal(`
+      <form class="support-form" novalidate>
+        <h2>💬 Soporte y sugerencias</h2>
+        <p class="muted small">Tu mensaje llega a <b>${esc((C.legal || {}).contactEmail || 'soporte')}</b>. Te respondemos por correo.</p>
+        <div class="segmented kind-pick">
+          <button type="button" class="active" data-kind="problema">🛠️ Problema</button>
+          <button type="button" data-kind="sugerencia">💡 Sugerencia</button>
+          <button type="button" data-kind="otro">💬 Otro</button>
+        </div>
+        <label class="field"><span>Tu nombre</span><input name="name" maxlength="60" autocomplete="name"></label>
+        <label class="field"><span>Tu correo <em>para responderte</em></span><input name="email" type="email" maxlength="120" autocomplete="email" placeholder="tucorreo@gmail.com"></label>
+        <label class="field"><span>Mensaje *</span><textarea name="message" rows="5" maxlength="2000" placeholder="Cuéntanos qué pasó o qué te gustaría que mejoráramos"></textarea></label>
+        <input name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
+        <p class="form-error" hidden></p>
+        <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Enviar</button>
+      </form>`, { cls: 'modal-sm', onClose: () => { if (location.hash === '#/soporte') history.replaceState(null, '', '#/legal/ayuda'); } });
+    const form = $('form', m.el), F = form.elements, errEl = $('.form-error', form);
+    let kind = 'problema';
+    F.name.value = loggedIn() ? myName() : (getGuest().name || '');
+    F.email.value = (loggedIn() && state.user.email) || '';
+    $('.kind-pick', form).onclick = e => {
+      const b = e.target.closest('[data-kind]'); if (!b) return;
+      kind = b.dataset.kind;
+      $$('.kind-pick button', form).forEach(x => x.classList.toggle('active', x === b));
+    };
+    form.onsubmit = e => {
+      e.preventDefault();
+      const msg = F.message.value.trim();
+      const fail = t => { errEl.textContent = t; errEl.hidden = false; };
+      errEl.hidden = true;
+      if (msg.length < 5) return fail('Escribe un poco más para que podamos ayudarte.');
+      if (Date.now() - pref('lastSupport', 0) < 60e3) return fail('Espera un minuto antes de enviar otro mensaje.');
+      const data = { kind, name: F.name.value.trim().slice(0, 60), email: F.email.value.trim().slice(0, 120), message: msg.slice(0, 2000),
+        uid: (state.user && state.user.uid) || '', page: location.href.slice(0, 200), status: 'nuevo' };
+      busy($('[data-submit]', form), async () => {
+        try {
+          await B.createSupport(data);   // queda guardado para el panel de administración
+          // Aviso por correo a soporte (si falla, el mensaje ya está guardado).
+          if (B.mode === 'firebase') fetch('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, website: F.website.value }) }).catch(() => {});
+          setPref('lastSupport', Date.now());
+          m.close();
+          toast('¡Mensaje enviado! Te responderemos pronto 💌', 'ok', 4500);
+        } catch (err) { fail(errMsg(err)); }
+      });
+    };
+  }
+
+  /* ---------------------- avisos de moderación ---------------------- */
+  // ¿Está bloqueado? (las reglas de Firestore lo impiden de todos modos; esto solo avisa antes).
+  const isBlocked = () => {
+    const b = state.blocked;
+    if (!b || (b.status === 'suspended' && b.until <= Date.now())) return false;
+    toast(b.status === 'banned' ? 'Tu cuenta está bloqueada.' : `Tu cuenta está suspendida hasta el ${fmtDate(b.until)}.`, 'err', 5000);
+    return true;
+  };
+  // Si un administrador suspendió, baneó o dejó un aviso, se le muestra al usuario al entrar.
+  async function checkModeration() {
+    if (!state.user) return;
+    let mod;
+    try { mod = await B.getModeration(state.user.uid); } catch { return; }
+    $('#mod-banner') && $('#mod-banner').remove();
+    if (!mod || mod.status === 'ok') return;
+    const active = mod.status === 'banned' || (mod.status === 'suspended' && mod.until > Date.now());
+    state.blocked = active ? mod : null;
+    if (active) {
+      const b = document.createElement('div');
+      b.id = 'mod-banner'; b.className = 'mod-banner';
+      b.innerHTML = `<strong>${mod.status === 'banned' ? '⛔ Tu cuenta fue bloqueada' : `⏸️ Tu cuenta está suspendida hasta el ${esc(fmtDate(mod.until))}`}</strong>
+        <span>${esc(mod.reason || 'Por incumplir las Reglas de la comunidad.')} No puedes publicar, pedir ni calificar. Si crees que es un error, escribe a <a href="#/soporte">soporte</a>.</span>`;
+      document.body.prepend(b);
+      return;
+    }
+    if (mod.status === 'warned' && pref('seenWarning', 0) !== mod.updatedAt) {
+      const m = openModal(`<div class="dialog"><h3>⚠️ Aviso del equipo de ${esc(C.appName)}</h3>
+        <p>${esc(mod.message || mod.reason || 'Revisa las Reglas de la comunidad.')}</p>
+        <p class="muted small">Si se repite, tu cuenta podría ser suspendida. <a class="link" href="#/legal/reglas" data-close>Ver reglas</a></p>
+        <div class="dialog-actions"><button type="button" class="btn btn-primary" data-close>Entendido</button></div></div>`, { cls: 'modal-sm' });
+      setPref('seenWarning', mod.updatedAt);
+      return m;
+    }
+  }
+
   /* ---------------------- páginas legales y de ayuda ---------------------- */
   function renderLegal(slug) {
     const pages = window.HIUSU_LEGAL ? window.HIUSU_LEGAL(C) : {};
@@ -2217,6 +2332,7 @@
 
   /* ---------------------- inicio ---------------------- */
   initFooter();
+  document.addEventListener('click', e => { if (e.target.closest('[data-support]')) { e.preventDefault(); openSupport(); } });
   document.title = C.appName;
   $$('[data-appname]').forEach(e => (e.textContent = C.appName));
   $$('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));

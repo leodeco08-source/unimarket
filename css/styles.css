@@ -992,3 +992,34 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 .card-wrap.hot .card-price { color: #e11d48; }
 /* Nuevo vendedor: marco morado destacado */
 .card-wrap.fresh .card-media { box-shadow: 0 0 0 2.5px #7b61ff, 0 8px 22px rgba(123,97,255,.25); }
+
+/* Barra de categorías ligera: sin recuadros ni fondos, solo ícono y nombre */
+.cat-rail { gap: 2px; margin-top: 10px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.cat-tile { width: 70px; gap: 4px; padding: 6px 0 9px; position: relative; }
+.cat-ic { width: auto; height: auto; background: none !important; border: 0; box-shadow: none !important; border-radius: 0; font-size: 26px; filter: none; transition: transform .15s; }
+.cat-tile:hover .cat-ic { transform: translateY(-1px) scale(1.06); }
+.cat-name { font-size: 12px; font-weight: 600; }
+.cat-tile.active .cat-ic { transform: scale(1.1); }
+.cat-tile.active .cat-name { color: var(--brand); }
+.cat-tile.active::after { content: ''; position: absolute; left: 16px; right: 16px; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: var(--brand); }
+@media (min-width: 900px) { .cat-tile { width: 82px; } .cat-ic { font-size: 28px; } }
+
+/* Reportes, soporte y avisos de moderación */
+.report-links { display: flex; gap: 6px; align-items: center; justify-content: center; margin: -6px 0 12px; font-size: 12.5px; color: var(--muted); }
+.report-links .link-btn { color: var(--muted); font-size: 12.5px; font-weight: 600; padding: 4px; }
+.report-links .link-btn:hover { color: var(--danger); }
+.report-form, .support-form { display: flex; flex-direction: column; gap: 12px; }
+.report-form h2, .support-form h2 { margin-bottom: -4px; }
+.report-form p, .support-form p { margin: 0; }
+.reason-list { display: flex; flex-direction: column; gap: 6px; }
+.reason-list label { cursor: pointer; }
+.reason-list input { position: absolute; opacity: 0; pointer-events: none; }
+.reason-list span { display: flex; flex-direction: column; gap: 1px; padding: 9px 12px; border: 1.5px solid var(--line); border-radius: 12px; transition: .15s; }
+.reason-list b { font-size: 14px; }
+.reason-list small { font-size: 12px; color: var(--muted); }
+.reason-list input:checked + span { border-color: var(--danger); background: var(--danger-soft); }
+.kind-pick { grid-template-columns: repeat(3, 1fr); margin: 0; }
+.kind-pick button { font-size: 13px; }
+.hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; opacity: 0; }
+.mod-banner { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; background: var(--danger); color: #fff; font-size: 13.5px; text-align: center; }
+.mod-banner a { color: #fff; text-decoration: underline; font-weight: 700; }
