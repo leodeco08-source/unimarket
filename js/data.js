@@ -120,6 +120,8 @@
       },
       resetPassword: email => auth.sendPasswordResetEmail(email),
       logout: () => auth.signOut(),
+      // Token de sesión para que el servidor sepa quién está subiendo fotos.
+      getIdToken: () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null)),
 
       async getProfile(uid) { const d = await col('users').doc(uid).get(); return d.exists ? d.data() : null; },
       saveProfile: (uid, data) => col('users').doc(uid).set(data, { merge: true }),
@@ -256,6 +258,7 @@
         return signIn({ uid: accs[email].uid, name, email, photo: '', provider: 'password' });
       },
       resetPassword: () => wait(),
+      getIdToken: async () => null,
       async logout() { session = null; ss.set(null); try { localStorage.removeItem('cm_guest_session'); } catch {} emit(); },
 
       getProfile: async uid => ls.get(K.u, {})[uid] || null,

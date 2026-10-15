@@ -19,7 +19,7 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Matrícula / código de estudiante** opcional en el perfil, visible para el vendedor.
 - **Disponibilidad en tiempo real**: desde *Mis publicaciones* (o la página del producto) el vendedor cambia con un toque entre ⚡ Inmediato (con cuántos tiene listos) y 📅 Pre-orden.
 - **Métodos de pago por vendedor**: efectivo, transferencia o ambos. Se configura una vez en el perfil y se puede aplicar a todas las publicaciones. Los datos bancarios son privados: el comprador solo los ve cuando el vendedor acepta su pedido.
-- **Fotos en ImgBB**: se suben a ImgBB y Firestore solo guarda el enlace (clave en `imgbbKey` de `js/config.js`).
+- **Fotos en ImgBB**: se suben a ImgBB a través de la función de servidor `api/upload.js` (Vercel) y Firestore solo guarda el enlace. La clave de ImgBB está escondida en Vercel (variable `IMGBB_KEY`), nunca en el código.
 - **Compra sin cuenta (invitado)**: el comprador llena nombre, WhatsApp y matrícula opcional. Sus pedidos se guardan en su dispositivo y, si después inicia sesión, pasan a su cuenta. Requiere activar **Anónimo** en Firebase → Authentication → Sign-in method. Se apaga con `guestCheckout: false`.
 - **Más info con cuenta**: a los invitados se les muestra la descripción recortada, una sola foto y sin WhatsApp del vendedor (`limitGuestDetails` en `js/config.js`).
 - **Detector de pedidos falsos**: marca como “⚠️ Posible fake” los pedidos con nombre al azar o de prueba, datos vacíos, WhatsApp inválido o repetido, cantidades raras o muchos pedidos pendientes del mismo comprador. Hay un filtro “Posibles fake” en Pedidos.
@@ -35,6 +35,7 @@ index.html        Estructura base (header, barra inferior, scripts)
 css/styles.css    Todos los estilos
 js/config.js      ⚙️  Configuración: Firebase, nombre, categorías, lugares, moneda
 js/names.js       Nombres y apellidos comunes (detector de fakes)
+api/upload.js     Función de servidor (Vercel) que sube fotos a ImgBB con la clave escondida
 js/legal.js       Textos de Términos, Aviso de privacidad, Cookies, Reglas y Ayuda
 favicon.ico, favicon.svg, assets/icons/, site.webmanifest   Íconos (Google, celulares)
 js/data.js        Capa de datos (Firebase real o modo demo con localStorage)
@@ -100,3 +101,14 @@ También funciona en Netlify, Vercel o GitHub Pages: solo sube la carpeta.
 - **Pagos**: el pago es en persona (efectivo o transferencia). Los métodos se configuran en `paymentMethods`.
 - **Inventario**: al aceptar un pedido se descuenta del stock; si el vendedor cancela un pedido aceptado, se devuelve.
 - **Personalizar**: cambia `appName`, `universityName`, `categories`, `campusSpots`, `currencySymbol` y `whatsappCountryCode` en `js/config.js`. Los colores están al inicio de `css/styles.css` (`--brand`, `--accent`).
+
+## Seguridad de las claves
+
+| Clave | ¿Es secreta? | Dónde vive |
+|---|---|---|
+| Firebase `apiKey` (en `js/config.js`) | **No.** Google la diseñó para ir en el navegador; los datos los protegen las reglas de `firestore.rules`. | En el código. Limítala a tus dominios (ver abajo). |
+| ImgBB | **Sí.** Con ella cualquiera podría subir fotos a tu cuenta. | Solo en Vercel → Settings → Environment Variables → `IMGBB_KEY`. |
+
+**Limitar la clave de Firebase a tus dominios:** Google Cloud Console → proyecto `unimarket-6cdb6` → APIs y servicios → Credenciales → la clave "Browser key (auto created by Firebase)" → *Restricciones de aplicaciones: Sitios web* → agrega `https://TU-DOMINIO/*`, `https://*.vercel.app/*` y `http://localhost:5173/*` → Guardar.
+
+Nunca subas a GitHub tokens, contraseñas ni claves secretas.

@@ -78,10 +78,10 @@ window.APP_CONFIG = {
   // Métodos de pago posibles. Cada vendedor elige cuáles acepta en su perfil o en cada publicación.
   paymentMethods: ['Efectivo', 'Transferencia'],
 
-  // ImgBB: las fotos se suben ahí y en Firebase solo se guarda el enlace.
-  // Ojo: esta clave queda visible en el código de la página (cualquiera podría usarla para subir fotos a tu cuenta de ImgBB).
-  // Déjala vacía ('') para guardar las fotos comprimidas dentro de Firestore.
-  imgbbKey: '5739458d5f0480bd110d767cd9e20940',
+  // Fotos: se suben a ImgBB a través de la función de servidor api/upload.js (Vercel).
+  // La clave de ImgBB NO va aquí: se guarda en Vercel como variable de entorno IMGBB_KEY.
+  // Pon '' para guardar las fotos comprimidas dentro de Firestore en lugar de ImgBB.
+  imageUploadUrl: '/api/upload',
 
   // Sonido y vibración cuando llega un pedido nuevo (cada usuario puede apagarlo en su perfil)
   orderSound: true,

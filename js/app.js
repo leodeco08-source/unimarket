@@ -75,17 +75,25 @@
   };
   const defaultPayments = () => payList(state.profile);
 
-  // Sube una imagen (dataURL) a ImgBB y devuelve { url, thumb }.
-  async function uploadImgbb(dataUrl) {
-    const body = new FormData();
-    body.append('image', dataUrl.split(',')[1]);
+  // Las fotos van a ImgBB a través de nuestro servidor (api/upload.js), que guarda la clave en secreto.
+  // En modo demo no hay servidor: las fotos se guardan comprimidas en el navegador.
+  const useImageServer = () => B.mode === 'firebase' && !!C.imageUploadUrl;
+  async function uploadImage(dataUrl) {
+    const token = await B.getIdToken();
     let res;
-    try { res = await fetch(`https://api.imgbb.com/1/upload?key=${encodeURIComponent(C.imgbbKey)}`, { method: 'POST', body }); }
-    catch { throw new Error('No se pudo conectar con ImgBB. Revisa tu internet.'); }
+    try {
+      res = await fetch(C.imageUploadUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token || ''}` },
+        body: JSON.stringify({ image: dataUrl.split(',')[1] }),
+      });
+    } catch { throw new Error('No se pudo subir la foto. Revisa tu internet.'); }
+    if (res.status === 404 || res.status === 501) {
+      throw new Error('La subida de fotos solo funciona en la página publicada (Vercel), no en el servidor local.');
+    }
     const json = await res.json().catch(() => ({}));
-    if (!res.ok || !json.success) throw new Error('ImgBB rechazó la foto' + (json.error && json.error.message ? `: ${json.error.message}` : '.'));
-    const d = json.data;
-    return { url: d.display_url || d.url, thumb: (d.medium && d.medium.url) || d.display_url || d.url };
+    if (!res.ok || !json.url) throw new Error(json.error || 'No se pudo subir la foto.');
+    return json;
   }
   const isData = src => /^data:/.test(src);
 
@@ -1215,15 +1223,15 @@
       busy(submit, async () => {
         try {
           let thumb = '', urls = null;
-          if (C.imgbbKey) {
-            // Sube solo las fotos nuevas a ImgBB; Firebase guarda únicamente los enlaces.
+          if (useImageServer()) {
+            // Sube solo las fotos nuevas; Firebase guarda únicamente los enlaces.
             urls = [];
             const pending = images.filter(isData).length;
             let done = 0;
             for (const src of images) {
               if (isData(src)) {
                 fail(`Subiendo fotos ${++done}/${pending}…`); errEl.classList.add('info');
-                const r = await uploadImgbb(src);
+                const r = await uploadImage(src);
                 urls.push(r.url); thumbOf.set(r.url, r.thumb);
               } else urls.push(src);
             }
