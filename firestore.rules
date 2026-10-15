@@ -39,7 +39,8 @@ service cloud.firestore {
 
     // ---------- Perfiles (PRIVADOS: nadie puede descargar los teléfonos de otros) ----------
     function validProfile(p) {
-      return p.keys().hasOnly(['name', 'phone', 'faculty', 'studentCode', 'payments', 'notifyOrders'])
+      return p.keys().hasOnly(['name', 'phone', 'faculty', 'studentCode', 'payments', 'notifyOrders', 'nameConfirmed'])
+        && (!p.keys().hasAny(['nameConfirmed']) || p.nameConfirmed is bool)
         && (!p.keys().hasAny(['notifyOrders']) || p.notifyOrders is bool)
         && optTxt(p, 'name', 60) && optTxt(p, 'phone', 20) && optTxt(p, 'faculty', 60) && optTxt(p, 'studentCode', 20)
         && (!p.keys().hasAny(['payments']) || (p.payments is list && p.payments.size() <= 2));

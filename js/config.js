@@ -42,6 +42,10 @@ window.APP_CONFIG = {
   // Deja vacío para permitir cualquier correo. Ejemplo: ['miuni.edu', 'alumnos.miuni.edu']
   allowedEmailDomains: [],
 
+  // Cuentas institucionales: su nombre ya viene verificado por la universidad, así que no se les pide.
+  // A cualquier otra cuenta (Gmail, Outlook…) se le pide su nombre y apellido la primera vez que entra.
+  trustedEmailDomains: ['alumnos.udg.mx'],
+
   // Moneda y formato
   currencySymbol: '$',
   locale: 'es',

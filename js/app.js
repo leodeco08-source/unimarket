@@ -637,8 +637,9 @@
           if (mode === 'register') {
             state.pendingName = name;
             const u = await B.register(name, email, pass);
-            await B.saveProfile(u.uid, { name });
-            state.profile = { ...(state.profile || {}), name };
+            const ok = !nameLooksFake(name);
+            await B.saveProfile(u.uid, { name, nameConfirmed: ok });
+            state.profile = { ...(state.profile || {}), name, nameConfirmed: ok };
             renderAccount();
             if (B.mode === 'firebase') toast('Cuenta creada. Te enviamos un correo de verificación.');
           } else {
@@ -671,6 +672,11 @@
         state.profile = { name: state.pendingName || user.name, phone: g.phone || '', faculty: '', studentCode: g.code || '' };
         B.saveProfile(user.uid, state.profile).catch(() => {});
       }
+      // Cuenta institucional con nombre: se confirma solo. Las demás confirman su nombre una vez.
+      if (!state.profile.nameConfirmed && isTrustedEmail(user.email) && !nameLooksFake(user.name)) {
+        state.profile = { ...state.profile, name: user.name, nameConfirmed: true };
+        B.saveProfile(user.uid, { name: user.name, nameConfirmed: true }).catch(() => {});
+      }
     } else state.profile = null;
     if (user) { if (!prev || prev.uid !== user.uid) { state.blocked = null; startWatchers(); checkModeration(); } }
     else stopWatchers();
@@ -681,6 +687,7 @@
     state.ready = true;
     // Si se acaba de crear la sesión de invitado durante un pedido, no hace falta redibujar la página.
     if (firstRun || real || !user || (prev && !prev.anonymous)) router();
+    if (real && !state.profile.nameConfirmed) { askName(after); return; }
     if (real && !firstRun) toast(`¡Hola, ${myName().split(' ')[0]}! 👋${prev && prev.anonymous ? ' Tus pedidos ya están en tu cuenta.' : ''}`);
     if (after) after();
   }
@@ -869,6 +876,7 @@
   // Abre el pedido directo desde el catálogo (pide sesión si hace falta).
   function startOrder(p) {
     if (isBlocked()) return;
+    if (loggedIn() && !(state.profile && state.profile.nameConfirmed)) return askName(() => startOrder(p));
     if (loggedIn()) return openOrder(p);
     if (C.guestCheckout === false) { state.afterLogin = () => openOrder(p); openLogin('comprar'); return; }
     openOrder(p, { guest: true });
@@ -1580,6 +1588,7 @@
       d.phone = ph.value;
       if (!d.payments.length) return fail('Elige al menos un método de pago.');
       if (isBlocked()) return;
+      if (!(state.profile && state.profile.nameConfirmed)) return askName(() => form.requestSubmit());
       if (!await B.canSell()) {
         errEl.innerHTML = 'Para vender, primero verifica tu correo: te enviamos un enlace a <b>' + esc(state.user.email) + '</b>. Ábrelo y vuelve a tocar “Publicar”. <button type="button" class="link-btn" data-resend>Reenviar correo</button>';
         errEl.hidden = false;
@@ -1710,6 +1719,8 @@
             : emptyState('🛒', 'Aún no vendes nada', 'Publica tu primer producto en menos de un minuto.', '<a class="btn btn-primary" href="#/vender">Publicar</a>')}
         </section>
       </div>`;
+    // Los botones de los pedidos (Aceptar, Rechazar, WhatsApp…) también funcionan desde el Resumen.
+    bindOrderActions(el);
     // Calificación promedio del vendedor (de sus reseñas públicas).
     B.listReviews('sellerId', state.user.uid).then(list => {
       const box = $('#stat-rating strong'); if (!box) return;
@@ -2270,6 +2281,62 @@
           m.close();
           toast('¡Mensaje enviado! Te responderemos pronto 💌', 'ok', 4500);
         } catch (err) { fail(errMsg(err)); }
+      });
+    };
+  }
+
+  /* ---------------------- nombre real ---------------------- */
+  const isTrustedEmail = email => {
+    const e = String(email || '').toLowerCase();
+    return (C.trustedEmailDomains || []).some(d => e.endsWith('@' + String(d).toLowerCase().replace(/^@/, '')));
+  };
+  // Usa el mismo detector de pedidos falsos para revisar nombres.
+  const nameLooksFake = n => {
+    const w = String(n || '').trim().split(/\s+/).filter(Boolean);
+    return w.length < 2 || fakeCheck({ id: 'x', buyerName: n, buyerPhone: '+525531928746', qty: 1 }).suspect;
+  };
+  // Se pide una sola vez a cuentas no institucionales (muchas de Gmail no tienen nombre real).
+  function askName(after) {
+    if ($('.name-form')) return;
+    const parts = String((state.profile && state.profile.name) || (state.user && state.user.name) || '').trim().split(/\s+/);
+    const guessFirst = nameLooksFake(parts.join(' ')) ? '' : parts.slice(0, Math.max(1, parts.length - 2)).join(' ');
+    const guessLast = guessFirst ? parts.slice(Math.max(1, parts.length - 2)).join(' ') : '';
+    const m = openModal(`
+      <form class="name-form" novalidate>
+        <h2>👋 ¿Cómo te llamas?</h2>
+        <p class="muted small">Solo te lo pedimos una vez. Es el nombre que verán los vendedores y compradores, así que usa tu nombre real.</p>
+        <div class="row2">
+          <label class="field"><span>Nombre(s) *</span><input name="first" maxlength="30" autocomplete="given-name" placeholder="Ej. Ana Sofía"></label>
+          <label class="field"><span>Apellido(s) *</span><input name="last" maxlength="30" autocomplete="family-name" placeholder="Ej. López Ruiz"></label>
+        </div>
+        <p class="form-error" hidden></p>
+        <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Guardar y continuar</button>
+        <p class="legal-note center">¿Tienes correo <b>@${esc((C.trustedEmailDomains || [''])[0])}</b>? Entra con él y no tendrás que escribirlo.</p>
+      </form>`, { cls: 'modal-sm' });
+    const f = $('form', m.el), F = f.elements, err = $('.form-error', f);
+    F.first.value = guessFirst; F.last.value = guessLast;
+    setTimeout(() => (guessFirst ? F.last : F.first).focus(), 250);
+    f.onsubmit = e => {
+      e.preventDefault();
+      const clean = v => v.trim().replace(/\s+/g, ' ');
+      const first = clean(F.first.value), last = clean(F.last.value), full = `${first} ${last}`.trim();
+      const fail = t => { err.textContent = t; err.hidden = false; };
+      err.hidden = true;
+      if (first.length < 2) return fail('Escribe tu nombre.');
+      if (last.length < 2) return fail('Escribe tu apellido.');
+      if (/\d/.test(full)) return fail('El nombre no puede tener números.');
+      if (nameLooksFake(full)) return fail('Ese nombre no parece real. Escribe tu nombre y apellido verdaderos.');
+      busy($('[data-submit]', f), async () => {
+        try {
+          await B.saveProfile(state.user.uid, { name: full, nameConfirmed: true });
+          state.profile = { ...(state.profile || {}), name: full, nameConfirmed: true };
+          // Actualiza el nombre en sus publicaciones.
+          loadMine(true).then(list => list.filter(p => p.sellerName !== full).forEach(p => B.updateProduct(p.id, { sellerName: full }).catch(() => {}))).catch(() => {});
+          renderAccount();
+          m.close();
+          toast(`¡Listo, ${first}! 👋`);
+          if (after) after();
+        } catch (e2) { fail(errMsg(e2)); }
       });
     };
   }
