@@ -734,3 +734,41 @@ code { font-size: .9em; background: var(--surface-2); padding: 1px 6px; border-r
 .notice.small { font-size: 13px; margin: 4px 0 0; }
 a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 .buy-bar .btn-ghost { background: var(--surface); }
+
+/* =========================================================
+   Añadidos: compra como invitado, desbloqueo de info, pedidos falsos
+   ========================================================= */
+.login-nudge, .unlock-card {
+  display: flex; align-items: center; gap: 12px; padding: 14px; margin: 14px 0 4px; border-radius: 16px;
+  background: var(--brand-soft); border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+}
+.login-nudge > div, .unlock-card > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.login-nudge small, .unlock-card small { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.nudge-ic { font-size: 22px; }
+.login-nudge .btn-icon { width: 32px; height: 32px; flex: none; }
+.unlock-card { margin: 16px 0 0; }
+@media (max-width: 520px) {
+  .login-nudge { flex-wrap: wrap; }
+  .login-nudge > div { flex-basis: calc(100% - 80px); }
+  .login-nudge [data-nudge-login] { order: 3; width: 100%; }
+}
+.more-photos { position: absolute; right: 12px; bottom: 12px; z-index: 2; border: 0; border-radius: 99px; padding: 8px 14px; font-weight: 700; font-size: 13px; background: rgba(15,12,40,.72); color: #fff; backdrop-filter: blur(6px); }
+.btn.locked { position: relative; }
+.btn.locked .lock { position: absolute; top: -6px; right: -6px; font-size: 13px; background: var(--surface); border-radius: 99px; width: 22px; height: 22px; display: grid; place-items: center; box-shadow: var(--shadow); }
+.desc .link-btn { padding: 6px 0 0; }
+
+.guest-box { display: flex; flex-direction: column; gap: 12px; padding: 14px; border-radius: 16px; background: var(--surface-2); }
+.guest-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.guest-head .link-btn { padding: 0; font-size: 13px; }
+.save-nudge { margin-top: 16px; padding: 14px; border-radius: 14px; background: var(--brand-soft); width: 100%; }
+.save-nudge p { margin: 0 0 10px !important; font-size: 13.5px; }
+
+.order.suspect { border-left-color: var(--danger); box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 35%, transparent); }
+.fake-flag { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border-radius: 12px; background: var(--danger-soft); color: var(--danger); font-size: 13px; }
+.fake-flag span { font-size: 12.5px; opacity: .9; }
+.tag-guest { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); color: var(--muted); vertical-align: middle; }
+.cache-note { margin: 0; font-size: 12.5px; color: var(--muted); background: var(--surface-2); padding: 8px 12px; border-radius: 10px; }
+
+/* Opciones de pago/modalidad: cada botón ocupa todo su espacio */
+.choice label { display: flex; }
+.choice label > span { flex: 1; }
