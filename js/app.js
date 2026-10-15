@@ -2216,14 +2216,15 @@
     const m = openModal(`
       <form class="support-form" novalidate>
         <h2>💬 Soporte y sugerencias</h2>
-        <p class="muted small">Tu mensaje llega a <b>${esc((C.legal || {}).contactEmail || 'soporte')}</b>. Te respondemos por correo.</p>
+        <p class="muted small">Tu mensaje llega directo al equipo de ${esc(C.appName)}. Si dejas tu correo, te respondemos ahí.
+          ${(C.legal || {}).contactEmail ? `¿Prefieres contacto directo? Escríbenos a <a class="link" href="mailto:${esc(C.legal.contactEmail)}">${esc(C.legal.contactEmail)}</a>.` : ''}</p>
         <div class="segmented kind-pick">
           <button type="button" class="active" data-kind="problema">🛠️ Problema</button>
           <button type="button" data-kind="sugerencia">💡 Sugerencia</button>
           <button type="button" data-kind="otro">💬 Otro</button>
         </div>
         <label class="field"><span>Tu nombre</span><input name="name" maxlength="60" autocomplete="name"></label>
-        <label class="field"><span>Tu correo <em>para responderte</em></span><input name="email" type="email" maxlength="120" autocomplete="email" placeholder="tucorreo@gmail.com"></label>
+        <label class="field"><span>Tu correo <em>opcional, para responderte</em></span><input name="email" type="email" maxlength="120" autocomplete="email" placeholder="tucorreo@gmail.com"></label>
         <label class="field"><span>Mensaje *</span><textarea name="message" rows="5" maxlength="2000" placeholder="Cuéntanos qué pasó o qué te gustaría que mejoráramos"></textarea></label>
         <input name="website" tabindex="-1" autocomplete="off" class="hp" aria-hidden="true">
         <p class="form-error" hidden></p>
@@ -2249,9 +2250,8 @@
         uid: (state.user && state.user.uid) || '', page: location.href.slice(0, 200), status: 'nuevo' };
       busy($('[data-submit]', form), async () => {
         try {
-          await B.createSupport(data);   // queda guardado para el panel de administración
-          // Aviso por correo a soporte (si falla, el mensaje ya está guardado).
-          if (B.mode === 'firebase') fetch('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...data, website: F.website.value }) }).catch(() => {});
+          if (F.website.value) { m.close(); return; }   // campo trampa: solo lo llenan los bots
+          await B.createSupport(data);   // va directo al panel de administración (sin correo)
           setPref('lastSupport', Date.now());
           m.close();
           toast('¡Mensaje enviado! Te responderemos pronto 💌', 'ok', 4500);

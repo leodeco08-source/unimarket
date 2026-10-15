@@ -25,7 +25,7 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Fotos**: hasta 4 por producto; se ordenan arrastrando (en celular, manteniendo presionado). La primera es la portada.
 - **Portada**: barra de categorías ligera; en "Todo" una sola cuadrícula ordenada por 🔥 HOT → ✨ Nuevo vendedor → mejores reseñas → más recientes (`hotMinSold`, `hotTop`, `newSellerDays` en `js/config.js`).
 - **Reportes**: botón para reportar una publicación o a un vendedor (uno por persona y cosa reportada). Se atienden en el panel de administración.
-- **Soporte y sugerencias**: formulario que guarda el mensaje y lo envía a soporte@hiusu.com (`api/support.js`, variables `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` en Vercel).
+- **Soporte y sugerencias**: el mensaje va directo al panel de administración (colección `support`), sin pasar por correo. Para contacto directo se muestra soporte@hiusu.com.
 - **Moderación**: avisos, suspensiones y baneos que pone el panel de administración; las reglas bloquean publicar, pedir y calificar a quien esté sancionado.
 - **Cobro por transferencia**: el vendedor elige UNA forma de cobro, CLABE (se valida y detecta el banco) o número de tarjeta, y la captura una sola vez con el titular; se guardan en privado y se usan en todas sus ventas. Al aceptar un pedido con transferencia, el comprador ve cada dato con su botón de copiar, el monto y una referencia del pedido.
 - **Compra sin cuenta (invitado)**: el comprador llena nombre, WhatsApp y matrícula opcional. Sus pedidos se guardan en su dispositivo y, si después inicia sesión, pasan a su cuenta. Requiere activar **Anónimo** en Firebase → Authentication → Sign-in method. Se apaga con `guestCheckout: false`.
