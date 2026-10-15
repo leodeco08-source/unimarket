@@ -772,3 +772,12 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 /* Opciones de pago/modalidad: cada botón ocupa todo su espacio */
 .choice label { display: flex; }
 .choice label > span { flex: 1; }
+
+/* WhatsApp con lada de país */
+.phone-field { display: flex; align-items: stretch; border: 1.5px solid var(--line); border-radius: 12px; background: var(--surface); transition: border-color .15s, box-shadow .15s; overflow: hidden; }
+.phone-field:focus-within { border-color: var(--brand); box-shadow: 0 0 0 4px var(--brand-soft); }
+.phone-field.invalid { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-soft); }
+.field .phone-field select, .field .phone-field input { border: 0; border-radius: 0; box-shadow: none !important; background: transparent; }
+.field .phone-field select { width: auto; flex: none; padding: 12px 6px 12px 10px; border-right: 1.5px solid var(--line); font-weight: 600; font-size: 15px; cursor: pointer; }
+.field .phone-field input { flex: 1; min-width: 0; letter-spacing: .04em; }
+.phone-err { color: var(--danger); font-weight: 600; font-size: 12.5px; }
