@@ -23,6 +23,8 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Compra sin cuenta (invitado)**: el comprador llena nombre, WhatsApp y matrícula opcional. Sus pedidos se guardan en su dispositivo y, si después inicia sesión, pasan a su cuenta. Requiere activar **Anónimo** en Firebase → Authentication → Sign-in method. Se apaga con `guestCheckout: false`.
 - **Más info con cuenta**: a los invitados se les muestra la descripción recortada, una sola foto y sin WhatsApp del vendedor (`limitGuestDetails` en `js/config.js`).
 - **Detector de pedidos falsos**: marca como “⚠️ Posible fake” los pedidos con nombre al azar o de prueba, datos vacíos, WhatsApp inválido o repetido, cantidades raras o muchos pedidos pendientes del mismo comprador. Hay un filtro “Posibles fake” en Pedidos.
+- **Nombres reales**: el detector usa una lista de nombres y apellidos comunes (`js/names.js`); si el nombre no se parece a ninguno, se marca como posible fake. Puedes agregar nombres a esa lista.
+- **WhatsApp con lada**: selector de país con 🇲🇽 +52 preseleccionado. Solo acepta números y exige los dígitos exactos del país (10 en México); si faltan dice “No es un número de teléfono válido”. Los países se editan en `phoneCountries` de `js/config.js`.
 
 ## Estructura
 
@@ -30,6 +32,7 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 index.html        Estructura base (header, barra inferior, scripts)
 css/styles.css    Todos los estilos
 js/config.js      ⚙️  Configuración: Firebase, nombre, categorías, lugares, moneda
+js/names.js       Nombres y apellidos comunes (detector de fakes)
 js/data.js        Capa de datos (Firebase real o modo demo con localStorage)
 js/app.js         Interfaz: rutas, catálogo, pedidos, editor y panel
 firestore.rules   Reglas de seguridad para Firestore
