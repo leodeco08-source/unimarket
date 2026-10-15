@@ -35,8 +35,34 @@ window.APP_CONFIG = {
   currencySymbol: '$',
   locale: 'es',
 
-  // Código de país que se agrega a los números de WhatsApp de 10 dígitos o menos (ej. '52' México, '54' Argentina).
-  whatsappCountryCode: '',
+  // Números guardados antes sin lada (10 dígitos) se tratan como de este país.
+  whatsappCountryCode: '52',
+
+  // Países para el WhatsApp. El primero con iso === defaultCountry sale preseleccionado.
+  // `digits` = cuántos dígitos lleva el número sin la lada (México: 10).
+  defaultCountry: 'MX',
+  phoneCountries: [
+    { iso: 'MX', name: 'México', flag: '🇲🇽', code: '52', digits: 10 },
+    { iso: 'US', name: 'EE. UU. / Canadá', flag: '🇺🇸', code: '1', digits: 10 },
+    { iso: 'GT', name: 'Guatemala', flag: '🇬🇹', code: '502', digits: 8 },
+    { iso: 'SV', name: 'El Salvador', flag: '🇸🇻', code: '503', digits: 8 },
+    { iso: 'HN', name: 'Honduras', flag: '🇭🇳', code: '504', digits: 8 },
+    { iso: 'NI', name: 'Nicaragua', flag: '🇳🇮', code: '505', digits: 8 },
+    { iso: 'CR', name: 'Costa Rica', flag: '🇨🇷', code: '506', digits: 8 },
+    { iso: 'PA', name: 'Panamá', flag: '🇵🇦', code: '507', digits: 8 },
+    { iso: 'CU', name: 'Cuba', flag: '🇨🇺', code: '53', digits: 8 },
+    { iso: 'CO', name: 'Colombia', flag: '🇨🇴', code: '57', digits: 10 },
+    { iso: 'VE', name: 'Venezuela', flag: '🇻🇪', code: '58', digits: 10 },
+    { iso: 'EC', name: 'Ecuador', flag: '🇪🇨', code: '593', digits: 9 },
+    { iso: 'PE', name: 'Perú', flag: '🇵🇪', code: '51', digits: 9 },
+    { iso: 'BO', name: 'Bolivia', flag: '🇧🇴', code: '591', digits: 8 },
+    { iso: 'CL', name: 'Chile', flag: '🇨🇱', code: '56', digits: 9 },
+    { iso: 'AR', name: 'Argentina', flag: '🇦🇷', code: '54', digits: 10 },
+    { iso: 'UY', name: 'Uruguay', flag: '🇺🇾', code: '598', digits: 8 },
+    { iso: 'PY', name: 'Paraguay', flag: '🇵🇾', code: '595', digits: 9 },
+    { iso: 'BR', name: 'Brasil', flag: '🇧🇷', code: '55', digits: 11 },
+    { iso: 'ES', name: 'España', flag: '🇪🇸', code: '34', digits: 9 },
+  ],
 
   // Métodos de pago posibles. Cada vendedor elige cuáles acepta en su perfil o en cada publicación.
   paymentMethods: ['Efectivo', 'Transferencia'],

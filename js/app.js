@@ -114,6 +114,56 @@
     if (changed) store.set('hiusu_orders', list);
   }
 
+  /* ---------------------- WhatsApp con lada de país ---------------------- */
+  const COUNTRIES = C.phoneCountries || [{ iso: 'MX', name: 'México', flag: '🇲🇽', code: '52', digits: 10 }];
+  const countryOf = iso => COUNTRIES.find(c => c.iso === iso) || COUNTRIES.find(c => c.iso === C.defaultCountry) || COUNTRIES[0];
+  // "+525512345678" → { iso: 'MX', num: '5512345678' }. Los números viejos sin lada se toman como del país por defecto.
+  function splitPhone(v) {
+    const raw = String(v || '').trim(), d = raw.replace(/\D/g, '');
+    if (raw.startsWith('+')) {
+      const c = [...COUNTRIES].sort((a, b) => b.code.length - a.code.length).find(c => d.startsWith(c.code) && d.length - c.code.length === c.digits);
+      if (c) return { iso: c.iso, num: d.slice(c.code.length) };
+    }
+    const def = countryOf(C.defaultCountry);
+    return { iso: def.iso, num: d.slice(-def.digits) };
+  }
+  const phoneInput = (name, value) => {
+    const { iso, num } = splitPhone(value), c = countryOf(iso);
+    return `<div class="phone-field">
+        <select name="${name}_cc" aria-label="Lada del país">${COUNTRIES.map(x => `<option value="${x.iso}" ${x.iso === iso ? 'selected' : ''} title="${esc(x.name)}">${x.flag} +${x.code}</option>`).join('')}</select>
+        <input name="${name}" type="tel" inputmode="numeric" autocomplete="tel-national" maxlength="${c.digits}" placeholder="${c.digits} dígitos" value="${esc(num)}">
+      </div><small class="phone-err" data-err="${name}" hidden></small>`;
+  };
+  // Solo números y como máximo los dígitos del país elegido.
+  function bindPhone(form, name) {
+    const input = form.elements[name], sel = form.elements[name + '_cc'];
+    if (!input || !sel) return;
+    const fit = () => {
+      const c = countryOf(sel.value);
+      input.maxLength = c.digits; input.placeholder = `${c.digits} dígitos`;
+      input.value = input.value.replace(/\D/g, '').slice(0, c.digits);
+      showPhoneErr(form, name, '');
+    };
+    input.addEventListener('input', fit);
+    sel.addEventListener('change', fit);
+  }
+  function showPhoneErr(form, name, msg) {
+    const e = form.querySelector(`[data-err="${name}"]`), input = form.elements[name];
+    if (e) { e.textContent = msg; e.hidden = !msg; }
+    if (input) input.closest('.phone-field').classList.toggle('invalid', !!msg);
+  }
+  // Devuelve { ok, value: '+52XXXXXXXXXX' } o un mensaje de error.
+  function readPhone(form, name, { required = false } = {}) {
+    const input = form.elements[name], c = countryOf(form.elements[name + '_cc'].value);
+    const digits = input.value.replace(/\D/g, '');
+    let msg = '';
+    if (!digits) msg = required ? 'Escribe tu número de WhatsApp.' : '';
+    else if (digits.length !== c.digits) msg = `No es un número de teléfono válido: deben ser ${c.digits} dígitos${c.iso === C.defaultCountry ? '' : ` para ${c.name}`}.`;
+    showPhoneErr(form, name, msg);
+    if (msg) { input.focus(); return { ok: false, msg }; }
+    return { ok: true, value: digits ? `+${c.code}${digits}` : '' };
+  }
+
   /* ---------------------- detector de pedidos falsos ---------------------- */
   // Revisa el pedido al mostrarlo al vendedor (no se puede falsear desde el navegador del comprador).
   const plain = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -134,6 +184,9 @@
     g += (w.match(RARE_PAIRS) || []).length;
     if (/q(?!u)/.test(w)) g += 1;
     if (w.length >= 14) g += 1;
+    // Terminaciones que casi ningún nombre tiene (ej. "...fl", "...dk").
+    const end = (w.match(/[^aeiouy]{2}$/) || [''])[0];
+    if (end && !/^(nd|nt|rt|rd|rk|nk|st|ld|ck|ns|rs|rn|th|sh|ch|ph|gh|ff|ll|ss|tt|rl|lf|ts|nz|rz|tz|lt|rg|ng|rc|rx|lm|ls|ms|ds|zz|dt)$/.test(end)) g += 1;
     return g;
   }
   function fakeCheck(o, all = []) {
@@ -146,9 +199,18 @@
     else if (name.replace(/\s/g, '').length < 3) strong.push('Nombre demasiado corto');
     else if (JUNK_NAMES.test(n.replace(/\s+/g, '')) || words.every(w => JUNK_NAMES.test(w))) strong.push('Nombre de prueba o inventado');
     else {
-      const scores = words.map(w => gibberishWord(w.replace(/[^a-zñ]/g, '')));
-      if (scores.some(x => x >= 2) || scores.reduce((a, b) => a + b, 0) >= 3) strong.push('El nombre parece escrito al azar');
-      else if (words.length === 1) info.push('Solo un nombre, sin apellido');
+      const clean = words.map(w => w.replace(/[^a-zñ]/g, '')).filter(Boolean);
+      const scores = clean.map(gibberishWord);
+      const total = scores.reduce((a, b) => a + b, 0);
+      const names = window.HIUSU_NAMES || new Set();
+      const known = clean.some(w => names.has(w));
+      // Si trae un nombre conocido, se tolera más un apellido raro (ej. "Benjamín Schmidt").
+      if (scores.some(x => x >= (known ? 3 : 2)) || total >= (known ? 4 : 3)) strong.push('El nombre parece escrito al azar');
+      else if (!known && (clean.length === 1 || total >= 1)) strong.push('No parece un nombre real');
+      // El primer nombre desconocido y con letras raras, aunque el apellido sea real (ej. "oidsiefl Pérez").
+      else if (clean[0] && !names.has(clean[0]) && scores[0] >= 1) strong.push('El primer nombre no parece real');
+      else if (!known) weak.push('Nombre poco común');
+      else if (clean.length === 1) info.push('Solo un nombre, sin apellido');
     }
     const digits = String(o.buyerPhone || '').replace(/\D/g, '');
     if (!digits) (o.guest ? strong : weak).push('Sin WhatsApp');
@@ -830,10 +892,8 @@
         ${guest ? `<div class="guest-box">
           <div class="guest-head"><strong>Tus datos</strong><button type="button" class="link-btn" data-login>¿Tienes cuenta? Inicia sesión</button></div>
           <label class="field"><span>Nombre completo *</span><input name="gname" autocomplete="name" maxlength="60" placeholder="Ej. Ana López" value="${esc(g.name || '')}"></label>
-          <div class="row2">
-            <label class="field"><span>WhatsApp *</span><input name="gphone" type="tel" inputmode="tel" autocomplete="tel" maxlength="20" placeholder="Ej. 5512345678" value="${esc(g.phone || '')}"></label>
-            <label class="field"><span>Matrícula <em>opcional</em></span><input name="gcode" maxlength="20" placeholder="Ej. A0123456" value="${esc(g.code || '')}"></label>
-          </div>
+          <div class="field"><span>WhatsApp *</span>${phoneInput('gphone', g.phone || '')}</div>
+          <label class="field"><span>Matrícula <em>opcional</em></span><input name="gcode" maxlength="20" placeholder="Ej. A0123456" value="${esc(g.code || '')}"></label>
           <small class="muted">Se guardan en este dispositivo para tu próximo pedido. El vendedor te contactará por WhatsApp.</small>
         </div>` : ''}
         <div class="order-item">
@@ -852,8 +912,8 @@
         <div class="field"><span>Método de pago</span>
           <div class="choice ${payList(p).length === 1 ? 'single' : ''}">${payList(p).map((x, i) => `<label><input type="radio" name="pay" value="${esc(x)}" ${i ? '' : 'checked'}><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
           ${payList(p).length === 1 ? `<small class="muted">Este vendedor solo acepta ${esc(payList(p)[0].toLowerCase())}.</small>` : ''}</div>
-        ${guest ? '' : `<label class="field"><span>Tu WhatsApp <em>para que te contacten</em></span>
-          <input name="phone" type="tel" inputmode="tel" value="${esc((state.profile && state.profile.phone) || '')}" placeholder="Ej. 5512345678"></label>`}
+        ${guest ? '' : `<div class="field"><span>Tu WhatsApp <em>para que te contacten</em></span>
+          ${phoneInput('phone', (state.profile && state.profile.phone) || '')}</div>`}
         <label class="field"><span>Nota para el vendedor <em>opcional</em></span>
           <textarea name="note" rows="2" maxlength="300" placeholder="Ej. Salgo de clase a las 12, ¿nos vemos en la biblioteca?"></textarea></label>
         <div class="order-total"><span>Total</span><strong id="total">${money(p.price)}</strong></div>
@@ -883,6 +943,7 @@
     };
     const loginBtn = $('[data-login]', m.el);
     if (loginBtn) loginBtn.onclick = () => { m.close(); state.afterLogin = () => openOrder(p); openLogin('comprar'); };
+    bindPhone(form, guest ? 'gphone' : 'phone');
     form.onsubmit = async e => {
       e.preventDefault();
       let pickupAt = null;
@@ -892,10 +953,12 @@
       }
       const gname = guest ? F.gname.value.trim().replace(/\s+/g, ' ') : '';
       const gcode = guest ? F.gcode.value.trim() : '';
-      const phone = (guest ? F.gphone : F.phone).value.trim();
-      if (guest && (!gname || !phone)) {
-        const ok = await confirmDialog({ title: 'Faltan tus datos', text: 'Sin nombre o WhatsApp el vendedor no podrá contactarte y podría tomar tu pedido como falso. ¿Enviarlo de todos modos?', ok: 'Enviar así' });
-        if (!ok) { (gname ? F.gphone : F.gname).focus(); return; }
+      const ph = readPhone(form, guest ? 'gphone' : 'phone', { required: guest });
+      if (!ph.ok) return;
+      const phone = ph.value;
+      if (guest && !gname) {
+        const ok = await confirmDialog({ title: 'Falta tu nombre', text: 'Sin tu nombre el vendedor podría tomar tu pedido como falso. ¿Enviarlo de todos modos?', ok: 'Enviar así' });
+        if (!ok) { F.gname.focus(); return; }
       }
       busy($('[data-submit]', m.el), async () => {
         let uid = state.user && state.user.uid;
@@ -1012,7 +1075,7 @@
               <h3>Entrega y contacto</h3>
               <label class="field"><span>Punto de entrega</span><input name="spot" list="spots" maxlength="60" placeholder="Ej. Biblioteca"><datalist id="spots">${C.campusSpots.map(s => `<option value="${esc(s)}">`).join('')}</datalist></label>
               <label class="field"><span>Horario</span><input name="schedule" maxlength="60" placeholder="Ej. Lun a Vie, 10:00 a 14:00"></label>
-              <label class="field"><span>WhatsApp <em>opcional, para que te escriban</em></span><input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="Ej. 5512345678"></label>
+              <div class="field"><span>WhatsApp <em>opcional, para que te escriban</em></span>${phoneInput('phone', p.phone || '')}</div>
               <div class="field"><span>Pagos que aceptas *</span>
                 <div class="choice pay-choice">${C.paymentMethods.map(x => `<label><input type="checkbox" name="payments" value="${esc(x)}"><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
                 <small class="muted">Puedes cambiarlo para todas tus publicaciones desde <a class="link" href="#/panel/perfil">tu perfil</a>.</small>
@@ -1054,7 +1117,7 @@
     F.description.value = p.description || '';
     F.spot.value = p.spot || '';
     F.schedule.value = p.schedule || '';
-    F.phone.value = p.phone || '';
+    bindPhone(form, 'phone');
     F.active.checked = p.active !== false;
     const pays = payList(p);
     $$('[name=payments]', form).forEach(x => (x.checked = pays.includes(x.value)));
@@ -1074,7 +1137,7 @@
       description: F.description.value.trim(),
       spot: F.spot.value.trim(),
       schedule: F.schedule.value.trim(),
-      phone: F.phone.value.trim(),
+      phone: F.phone.value ? `+${countryOf(F.phone_cc.value).code}${F.phone.value.replace(/\D/g, '')}` : '',
       payments: chosenPays(),
       active: F.active.checked,
     });
@@ -1138,6 +1201,9 @@
       errEl.hidden = true;
       if (d.title.length < 3) return fail('Escribe un título de al menos 3 letras.', F.title);
       if (d.price === '' || !(d.price >= 0)) return fail('Escribe un precio válido.', F.price);
+      const ph = readPhone(form, 'phone');
+      if (!ph.ok) return fail(ph.msg);
+      d.phone = ph.value;
       if (!d.payments.length) return fail('Elige al menos un método de pago.');
       const submit = $('[data-submit]', form);
       busy(submit, async () => {
@@ -1569,7 +1635,7 @@
           <h3>Tu perfil público</h3>
           <p class="muted small">Así te verán los compradores.</p>
           <label class="field"><span>Nombre</span><input name="name" maxlength="60"></label>
-          <label class="field"><span>WhatsApp</span><input name="phone" type="tel" inputmode="tel" maxlength="20" placeholder="Ej. 5512345678"></label>
+          <div class="field"><span>WhatsApp</span>${phoneInput('phone', pr.phone || '')}</div>
           <label class="field"><span>Facultad / carrera</span><input name="faculty" maxlength="60" placeholder="Ej. Ingeniería en Sistemas"></label>
           <label class="field"><span>Matrícula / código de estudiante <em>opcional, lo ve el vendedor en tus pedidos</em></span><input name="studentCode" maxlength="20" placeholder="Ej. A01234567"></label>
           <h3 class="sec-gap">💳 Cómo te pagan</h3>
@@ -1591,7 +1657,7 @@
       </div>`;
     const F = $('#pf').elements;
     F.name.value = pr.name || state.user.name || '';
-    F.phone.value = pr.phone || '';
+    bindPhone($('#pf'), 'phone');
     F.faculty.value = pr.faculty || '';
     F.studentCode.value = pr.studentCode || '';
     const pays = defaultPayments();
@@ -1608,7 +1674,9 @@
       e.preventDefault();
       const payments = $$('[name=payments]:checked', el).map(x => x.value);
       if (!payments.length) return toast('Elige al menos un método de pago', 'err');
-      const data = { name: F.name.value.trim() || state.user.name, phone: F.phone.value.trim(), faculty: F.faculty.value.trim(), studentCode: F.studentCode.value.trim(), payments };
+      const ph = readPhone($('#pf'), 'phone');
+      if (!ph.ok) return;
+      const data = { name: F.name.value.trim() || state.user.name, phone: ph.value, faculty: F.faculty.value.trim(), studentCode: F.studentCode.value.trim(), payments };
       const applyAll = F.applyAll.checked;
       busy($('[data-submit]', el), async () => {
         try {
