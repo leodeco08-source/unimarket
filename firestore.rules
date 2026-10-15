@@ -1,70 +1,144 @@
 rules_version = '2';
 // Pega estas reglas en: Consola de Firebase → Firestore Database → Reglas → Publicar
+//
+// Estas reglas son la verdadera defensa: aunque alguien se salte la página y
+// escriba directo en la base de datos (con la consola del navegador, scripts o la API),
+// aquí se rechaza todo lo que no tenga el formato, tamaño y permisos correctos.
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ---------- Quién es ----------
     function signedIn() { return request.auth != null; }
     function isMe(uid) { return signedIn() && request.auth.uid == uid; }
     // Para aceptar solo correos de tu universidad, cambia `true` por:
     //   request.auth.token.email.matches('.*@miuni[.]edu$')
     function allowedUser() { return signedIn() && true; }
-    // Cuenta real (Google o correo). Los invitados usan una sesión anónima: pueden pedir, pero no vender.
+    // Cuenta real (Google o correo). Los invitados usan sesión anónima: pueden pedir, pero no vender.
     function realUser() { return allowedUser() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
+    // Para vender: con correo y contraseña, el correo debe estar verificado (Google ya viene verificado).
+    function canSell() {
+      return realUser() && (request.auth.token.firebase.sign_in_provider != 'password' || request.auth.token.email_verified == true);
+    }
 
-    // Perfil público (nombre, WhatsApp, facultad)
+    // ---------- Ayudas de validación ----------
+    function d() { return request.resource.data; }
+    function txt(v, max) { return v is string && v.size() <= max; }
+    function optTxt(m, k, max) { return !m.keys().hasAny([k]) || txt(m[k], max); }
+
+    // ---------- Perfiles (PRIVADOS: nadie puede descargar los teléfonos de otros) ----------
+    function validProfile(p) {
+      return p.keys().hasOnly(['name', 'phone', 'faculty', 'studentCode', 'payments'])
+        && optTxt(p, 'name', 60) && optTxt(p, 'phone', 20) && optTxt(p, 'faculty', 60) && optTxt(p, 'studentCode', 20)
+        && (!p.keys().hasAny(['payments']) || (p.payments is list && p.payments.size() <= 2));
+    }
     match /users/{uid} {
-      allow read: if true;
-      allow write: if isMe(uid) && realUser();
+      allow read: if isMe(uid);
+      allow create, update: if isMe(uid) && realUser() && validProfile(d());
+      allow delete: if false;
 
-      // Ajustes privados del vendedor (datos para transferencia): solo el dueño
+      // Datos para cobrar (CLABE / tarjeta): solo el dueño
       match /private/{doc} {
-        allow read, write: if isMe(uid);
+        allow read: if isMe(uid);
+        allow write: if isMe(uid) && realUser()
+          && d().keys().hasOnly(['transfer', 'transferInfo'])
+          && (!d().keys().hasAny(['transfer']) || (d().transfer is map && d().transfer.keys().hasOnly(['method', 'holder', 'bank', 'clabe', 'card', 'note'])))
+          && optTxt(d(), 'transferInfo', 400);
       }
     }
 
-    // Publicaciones: cualquiera puede verlas (sin iniciar sesión)
+    // ---------- Publicaciones ----------
+    function validProduct(p) {
+      return p.keys().hasOnly(['title', 'price', 'stock', 'category', 'sub', 'mode', 'description', 'spot', 'schedule', 'phone',
+                               'payments', 'active', 'thumb', 'images', 'sellerId', 'sellerName', 'sellerPhoto', 'createdAt', 'updatedAt'])
+        && txt(p.title, 80) && p.title.size() >= 3
+        && p.price is number && p.price >= 0 && p.price <= 1000000
+        && (p.get('stock', null) == null || (p.stock is int && p.stock >= 0 && p.stock <= 100000))
+        && txt(p.category, 30)
+        && optTxt(p, 'sub', 60) && optTxt(p, 'description', 1000) && optTxt(p, 'spot', 60) && optTxt(p, 'schedule', 60) && optTxt(p, 'phone', 20)
+        && p.get('mode', 'inmediato') in ['inmediato', 'preorden']
+        && (!p.keys().hasAny(['payments']) || (p.payments is list && p.payments.size() >= 1 && p.payments.size() <= 2))
+        && p.get('active', true) is bool
+        && optTxt(p, 'thumb', 60000)
+        && (!p.keys().hasAny(['images']) || (p.images is list && p.images.size() <= 4))
+        && txt(p.sellerName, 60) && optTxt(p, 'sellerPhoto', 500);
+    }
     match /products/{id} {
       allow read: if true;
-      allow create: if realUser()
-        && request.resource.data.sellerId == request.auth.uid
-        && request.resource.data.title is string
-        && request.resource.data.title.size() <= 80
-        && request.resource.data.price is number
-        && request.resource.data.price >= 0;
-      allow update: if isMe(resource.data.sellerId)
-        && request.resource.data.sellerId == resource.data.sellerId;
+      allow create: if canSell() && d().sellerId == request.auth.uid && validProduct(d())
+        && d().createdAt == request.time && d().updatedAt == request.time;
+      allow update: if isMe(resource.data.sellerId) && d().sellerId == resource.data.sellerId
+        && d().createdAt == resource.data.createdAt && d().updatedAt == request.time
+        && validProduct(d());
       allow delete: if isMe(resource.data.sellerId);
     }
 
-    // Fotos en tamaño completo de cada publicación
+    // Fotos de versiones anteriores (antes de ImgBB)
     match /productImages/{id} {
       allow read: if true;
-      allow create: if realUser() && request.resource.data.sellerId == request.auth.uid;
-      allow update: if isMe(resource.data.sellerId) && request.resource.data.sellerId == resource.data.sellerId;
+      allow create: if canSell() && d().sellerId == request.auth.uid
+        && d().keys().hasOnly(['images', 'sellerId']) && d().images is list && d().images.size() <= 4;
+      allow update: if isMe(resource.data.sellerId) && d().sellerId == resource.data.sellerId
+        && d().keys().hasOnly(['images', 'sellerId']) && d().images is list && d().images.size() <= 4;
       allow delete: if isMe(resource.data.sellerId);
     }
 
-    // Pedidos: solo los ven el comprador (con cuenta o invitado) y el vendedor
+    // ---------- Pedidos ----------
+    function productOf(pid) { return get(/databases/$(database)/documents/products/$(pid)).data; }
+    // Un pedido nuevo debe copiar fielmente el producto real: no se puede inventar precio, total, vendedor ni título.
+    function validNewOrder(o) {
+      let p = productOf(o.productId);
+      return o.keys().hasOnly(['productId', 'productTitle', 'productThumb', 'category', 'price', 'qty', 'total',
+                               'sellerId', 'sellerName', 'sellerPhone', 'buyerId', 'buyerName', 'buyerEmail', 'buyerPhone',
+                               'buyerCode', 'guest', 'spot', 'payment', 'note', 'status', 'mode', 'pickupAt', 'createdAt', 'updatedAt'])
+        && o.buyerId == request.auth.uid
+        && o.status == 'pendiente'
+        && o.createdAt == request.time && o.updatedAt == request.time
+        && p.get('active', true) == true
+        && o.sellerId == p.sellerId && o.sellerId != request.auth.uid
+        && o.productTitle == p.title && o.category == p.category
+        && o.sellerName == p.sellerName && o.sellerPhone == p.get('phone', '')
+        && o.productThumb == p.get('thumb', '')
+        && o.price == p.price
+        && o.qty is int && o.qty >= 1 && o.qty <= 50
+        && (p.get('stock', null) == null || o.qty <= p.stock)
+        && o.total == o.price * o.qty
+        && o.payment in p.get('payments', ['Efectivo', 'Transferencia'])
+        && o.mode == p.get('mode', 'inmediato')
+        && (o.pickupAt == null || o.pickupAt is int)
+        && o.guest is bool
+        && txt(o.buyerName, 60) && txt(o.buyerPhone, 20) && txt(o.buyerCode, 20)
+        && (o.buyerEmail == '' || o.buyerEmail == request.auth.token.get('email', ''))
+        && txt(o.spot, 60) && txt(o.note, 300);
+    }
+    function validTransition(from, to) {
+      return (from == 'pendiente' && to in ['aceptado', 'rechazado'])
+        || (from == 'aceptado' && to in ['entregado', 'cancelado']);
+    }
+
+    // Solo los ven el comprador (con cuenta o invitado) y el vendedor
     match /orders/{id} {
       allow read: if signedIn()
         && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);
-      allow create: if allowedUser()
-        && request.resource.data.buyerId == request.auth.uid
-        && request.resource.data.sellerId != request.auth.uid
-        && request.resource.data.status == 'pendiente';
-      allow update: if signedIn()
-        && request.resource.data.buyerId == resource.data.buyerId
-        && request.resource.data.sellerId == resource.data.sellerId
-        && (
-          // El vendedor cambia el estado (aceptar, rechazar, entregar, cancelar)
-          resource.data.sellerId == request.auth.uid
-          // El comprador solo puede cancelar mientras esté pendiente
+      allow create: if allowedUser() && validNewOrder(d());
+      allow update: if signedIn() && (
+          // El vendedor: solo cambia el estado (en orden lógico) y adjunta sus datos para cobrar
+          (resource.data.sellerId == request.auth.uid
+            && d().diff(resource.data).affectedKeys().hasOnly(['status', 'transfer', 'transferInfo', 'updatedAt'])
+            && validTransition(resource.data.status, d().status)
+            && d().updatedAt == request.time
+            && optTxt(d(), 'transferInfo', 400))
+          // El comprador: solo puede cancelar mientras esté pendiente
           || (resource.data.buyerId == request.auth.uid
-              && resource.data.status == 'pendiente'
-              && request.resource.data.status == 'cancelado'
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']))
+            && resource.data.status == 'pendiente' && d().status == 'cancelado'
+            && d().diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+            && d().updatedAt == request.time)
         );
       allow delete: if false;
+    }
+
+    // Todo lo demás está cerrado
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

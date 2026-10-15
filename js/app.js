@@ -1371,7 +1371,7 @@
       if (await deleteProduct(id, p.title)) location.hash = '#/panel/publicaciones';
     };
 
-    form.onsubmit = e => {
+    form.onsubmit = async e => {
       e.preventDefault();
       const d = collect();
       const fail = (msg, el) => { errEl.textContent = msg; errEl.hidden = false; el && el.focus(); };
@@ -1382,6 +1382,13 @@
       if (!ph.ok) return fail(ph.msg);
       d.phone = ph.value;
       if (!d.payments.length) return fail('Elige al menos un método de pago.');
+      if (!await B.canSell()) {
+        errEl.innerHTML = 'Para vender, primero verifica tu correo: te enviamos un enlace a <b>' + esc(state.user.email) + '</b>. Ábrelo y vuelve a tocar “Publicar”. <button type="button" class="link-btn" data-resend>Reenviar correo</button>';
+        errEl.hidden = false;
+        const rs = $('[data-resend]', errEl);
+        if (rs) rs.onclick = () => B.resendVerification().then(() => toast('Te reenviamos el correo de verificación 📧'), e => toast(errMsg(e), 'err'));
+        return;
+      }
       const submit = $('[data-submit]', form);
       busy(submit, async () => {
         try {

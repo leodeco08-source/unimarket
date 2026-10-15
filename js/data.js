@@ -39,6 +39,7 @@
       uid: u.uid,
       name: u.isAnonymous ? 'Invitado' : u.displayName || (u.email || 'Usuario').split('@')[0],
       anonymous: !!u.isAnonymous,
+      emailVerified: !!u.emailVerified,
       email: u.email || '',
       photo: u.photoURL || '',
       provider: (u.providerData[0] || {}).providerId || 'password',
@@ -122,6 +123,16 @@
       logout: () => auth.signOut(),
       // Token de sesión para que el servidor sepa quién está subiendo fotos.
       getIdToken: () => (auth.currentUser ? auth.currentUser.getIdToken() : Promise.resolve(null)),
+      // ¿Puede vender? Con correo y contraseña, el correo debe estar verificado (con Google ya lo está).
+      async canSell() {
+        const u = auth.currentUser;
+        if (!u || u.isAnonymous) return false;
+        if ((u.providerData[0] || {}).providerId !== 'password' || u.emailVerified) return true;
+        await u.reload();                       // por si acaba de verificar en otra pestaña
+        if (auth.currentUser.emailVerified) { await auth.currentUser.getIdToken(true); return true; }
+        return false;
+      },
+      resendVerification: () => (auth.currentUser ? auth.currentUser.sendEmailVerification() : Promise.resolve()),
 
       async getProfile(uid) { const d = await col('users').doc(uid).get(); return d.exists ? d.data() : null; },
       saveProfile: (uid, data) => col('users').doc(uid).set(data, { merge: true }),
@@ -259,6 +270,8 @@
       },
       resetPassword: () => wait(),
       getIdToken: async () => null,
+      canSell: async () => true,
+      resendVerification: async () => {},
       async logout() { session = null; ss.set(null); try { localStorage.removeItem('cm_guest_session'); } catch {} emit(); },
 
       getProfile: async uid => ls.get(K.u, {})[uid] || null,
@@ -315,5 +328,65 @@
     };
   }
 
-  window.Backend = configured ? FirebaseBackend() : DemoBackend();
+  /* ---------------------- BLINDAJE DE DATOS ----------------------
+     Todo lo que llega de la base de datos se limpia aquí antes de mostrarse.
+     Así, aunque alguien escriba basura o código directamente en Firestore
+     (sin usar la página), la interfaz solo recibe tipos y valores válidos. */
+  const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
+  const str = (v, max = 300) => (typeof v === 'string' ? v : v == null ? '' : String(v)).slice(0, max);
+  const num = (v, min = 0, max = 1e7) => { const n = Number(v); return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : min; };
+  const int = (v, min = 0, max = 1e6) => Math.round(num(v, min, max));
+  const ms = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
+  // Solo imágenes https o data:image (nunca javascript: ni otros esquemas).
+  const imgUrl = v => (typeof v === 'string' && (/^https:\/\/[^\s"'<>]+$/i.test(v) || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v)) ? v : '');
+  const strList = (v, max, len) => (Array.isArray(v) ? v.slice(0, max).map(x => str(x, len)).filter(Boolean) : []);
+  const STATUSES = ['pendiente', 'aceptado', 'entregado', 'rechazado', 'cancelado'];
+
+  function cleanProduct(p) {
+    if (!p || !ID_RE.test(String(p.id || ''))) return null;
+    return {
+      id: p.id, sellerId: str(p.sellerId, 128), sellerName: str(p.sellerName, 60), sellerPhoto: imgUrl(p.sellerPhoto),
+      title: str(p.title, 80), description: str(p.description, 1000), price: num(p.price, 0, 1e6),
+      stock: p.stock == null || p.stock === '' ? null : int(p.stock, 0, 1e5),
+      category: str(p.category, 30), sub: str(p.sub, 60), mode: p.mode === 'preorden' ? 'preorden' : 'inmediato',
+      spot: str(p.spot, 60), schedule: str(p.schedule, 60), phone: str(p.phone, 20),
+      payments: strList(p.payments, 4, 20), active: p.active !== false,
+      thumb: imgUrl(p.thumb), images: (Array.isArray(p.images) ? p.images.slice(0, 4).map(imgUrl).filter(Boolean) : []),
+      createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
+    };
+  }
+  function cleanTransfer(t) {
+    if (!t || typeof t !== 'object') return null;
+    return { method: t.method === 'card' ? 'card' : 'clabe', holder: str(t.holder, 80), bank: str(t.bank, 40), note: str(t.note, 120),
+      clabe: str(t.clabe, 18).replace(/\D/g, ''), card: str(t.card, 16).replace(/\D/g, '') };
+  }
+  function cleanOrder(o) {
+    if (!o || !ID_RE.test(String(o.id || ''))) return null;
+    return {
+      id: o.id, productId: ID_RE.test(String(o.productId || '')) ? o.productId : '', productTitle: str(o.productTitle, 80), productThumb: imgUrl(o.productThumb),
+      category: str(o.category, 30), price: num(o.price, 0, 1e6), qty: int(o.qty, 1, 999), total: num(o.total, 0, 1e9),
+      sellerId: str(o.sellerId, 128), sellerName: str(o.sellerName, 60), sellerPhone: str(o.sellerPhone, 20).replace(/[^\d+]/g, ''),
+      buyerId: str(o.buyerId, 128), buyerName: str(o.buyerName, 60), buyerEmail: str(o.buyerEmail, 120), buyerPhone: str(o.buyerPhone, 20).replace(/[^\d+]/g, ''),
+      buyerCode: str(o.buyerCode, 20), guest: o.guest === true, spot: str(o.spot, 60), payment: o.payment === 'Transferencia' ? 'Transferencia' : 'Efectivo',
+      note: str(o.note, 300), status: STATUSES.includes(o.status) ? o.status : 'pendiente', mode: o.mode === 'preorden' ? 'preorden' : 'inmediato',
+      pickupAt: ms(o.pickupAt) || null, transfer: cleanTransfer(o.transfer), transferInfo: str(o.transferInfo, 400),
+      createdAt: ms(o.createdAt), updatedAt: ms(o.updatedAt),
+    };
+  }
+  const cleanList = (list, fn) => (list || []).map(fn).filter(Boolean);
+
+  function harden(b) {
+    return {
+      ...b,
+      listProducts: async () => cleanList(await b.listProducts(), cleanProduct),
+      getProduct: async id => (ID_RE.test(String(id)) ? cleanProduct(await b.getProduct(id)) : null),
+      myProducts: async uid => cleanList(await b.myProducts(uid), cleanProduct),
+      getImages: async id => (ID_RE.test(String(id)) ? (await b.getImages(id) || []).slice(0, 4).map(imgUrl).filter(Boolean) : []),
+      watchProducts: (cb, onErr) => b.watchProducts(list => cb(cleanList(list, cleanProduct)), onErr),
+      watchOrders: (field, uid, cb) => b.watchOrders(field, uid, list => cb(cleanList(list, cleanOrder))),
+      getPrivate: async uid => { const x = (await b.getPrivate(uid)) || {}; return { ...x, transfer: cleanTransfer(x.transfer), transferInfo: str(x.transferInfo, 400) }; },
+    };
+  }
+
+  window.Backend = harden(configured ? FirebaseBackend() : DemoBackend());
 })();

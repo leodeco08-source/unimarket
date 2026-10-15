@@ -103,6 +103,13 @@ También funciona en Netlify, Vercel o GitHub Pages: solo sube la carpeta.
 - **Inventario**: al aceptar un pedido se descuenta del stock; si el vendedor cancela un pedido aceptado, se devuelve.
 - **Personalizar**: cambia `appName`, `universityName`, `categories`, `campusSpots`, `currencySymbol` y `whatsappCountryCode` en `js/config.js`. Los colores están al inicio de `css/styles.css` (`--brand`, `--accent`).
 
+## Seguridad
+
+- **Reglas de Firestore** (`firestore.rules`): validan campos, tipos y tamaños; un pedido debe copiar el precio, total, vendedor y título reales del producto; los perfiles solo los lee su dueño; los estados de pedido solo cambian en orden lógico; para vender con correo hay que verificarlo.
+- **Limpieza de datos** (`js/data.js`): todo lo que llega de la base se valida antes de mostrarse (protección contra XSS).
+- **Cabeceras de seguridad** (`vercel.json`): CSP, anti-clickjacking, HTTPS obligatorio y más.
+- **Subida de fotos** (`api/upload.js`): sesión verificada, límite de 20 fotos cada 10 minutos, solo desde tu dominio y solo imágenes reales.
+
 ## Seguridad de las claves
 
 | Clave | ¿Es secreta? | Dónde vive |

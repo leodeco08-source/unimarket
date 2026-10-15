@@ -9,10 +9,43 @@
 
 // Clave web pública de Firebase (no es secreta; sirve para verificar tokens de ESTE proyecto).
 const FIREBASE_WEB_KEY = process.env.FIREBASE_WEB_KEY || 'AIzaSyCMulJeBpIBgWTbLSLWy2tgVLj20tYiRdw';
-const MAX_BASE64 = 4 * 1024 * 1024; // ~3 MB de imagen; las fotos ya llegan comprimidas (~150 KB)
+const MAX_BASE64 = 2 * 1024 * 1024; // ~1.5 MB de imagen; las fotos ya llegan comprimidas (~150 KB)
+
+// Solo se aceptan peticiones hechas desde estas páginas.
+const ALLOWED_ORIGINS = [/^https:\/\/(www\.)?hiusu\.com$/, /^https:\/\/[a-z0-9-]+\.vercel\.app$/, /^http:\/\/localhost(:\d+)?$/];
+
+// Límite de velocidad (por usuario y por IP). Es "en memoria": cada servidor de Vercel lleva su
+// propia cuenta, así que es una barrera razonable contra abusos, no un candado perfecto.
+const WINDOW_MS = 10 * 60 * 1000;   // 10 minutos
+const MAX_PER_USER = 20;            // fotos por usuario en esa ventana
+const MAX_PER_IP = 40;
+const hits = new Map();
+function tooMany(key, max) {
+  const now = Date.now();
+  const list = (hits.get(key) || []).filter(t => now - t < WINDOW_MS);
+  list.push(now);
+  hits.set(key, list);
+  if (hits.size > 5000) hits.clear(); // evita que la memoria crezca sin límite
+  return list.length > max;
+}
+// Revisa que el contenido de verdad sea una imagen JPEG, PNG, WebP o GIF (por sus primeros bytes).
+function looksLikeImage(b64) {
+  const head = Buffer.from(b64.slice(0, 24), 'base64');
+  const hex = head.toString('hex');
+  return hex.startsWith('ffd8ff') || hex.startsWith('89504e47') || hex.startsWith('47494638')
+    || (head.slice(0, 4).toString() === 'RIFF' && head.slice(8, 12).toString() === 'WEBP');
+}
 
 module.exports = async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Método no permitido.' });
+
+  const origin = String(req.headers.origin || '');
+  if (origin && !ALLOWED_ORIGINS.some(re => re.test(origin))) {
+    return res.status(403).json({ error: 'Origen no permitido.' });
+  }
+  const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || 'desconocida';
+  if (tooMany('ip:' + ip, MAX_PER_IP)) return res.status(429).json({ error: 'Demasiadas fotos en poco tiempo. Espera unos minutos.' });
 
   const imgbbKey = process.env.IMGBB_KEY;
   if (!imgbbKey) return res.status(500).json({ error: 'Falta configurar IMGBB_KEY en Vercel.' });
@@ -37,6 +70,14 @@ module.exports = async (req, res) => {
   if (!user.providerUserInfo || !user.providerUserInfo.length) {
     return res.status(403).json({ error: 'Inicia sesión con Google o correo para subir fotos.' });
   }
+  // Con correo y contraseña, el correo debe estar verificado.
+  if (user.providerUserInfo.every(p => p.providerId === 'password') && !user.emailVerified) {
+    return res.status(403).json({ error: 'Verifica tu correo antes de subir fotos.' });
+  }
+
+  if (tooMany('uid:' + user.localId, MAX_PER_USER)) {
+    return res.status(429).json({ error: 'Subiste muchas fotos en poco tiempo. Espera unos minutos.' });
+  }
 
   // 2) La foto (base64, sin el prefijo "data:image/...;base64,").
   const body = typeof req.body === 'string' ? safeJson(req.body) : (req.body || {});
@@ -44,6 +85,7 @@ module.exports = async (req, res) => {
   if (!image || image.length > MAX_BASE64 || !/^[A-Za-z0-9+/=]+$/.test(image)) {
     return res.status(400).json({ error: 'La foto no es válida o es demasiado grande.' });
   }
+  if (!looksLikeImage(image)) return res.status(400).json({ error: 'El archivo no es una imagen válida.' });
 
   // 3) Subida a ImgBB con la clave secreta.
   try {
