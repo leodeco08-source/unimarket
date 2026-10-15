@@ -8,11 +8,13 @@ service cloud.firestore {
     // Para aceptar solo correos de tu universidad, cambia `true` por:
     //   request.auth.token.email.matches('.*@miuni[.]edu$')
     function allowedUser() { return signedIn() && true; }
+    // Cuenta real (Google o correo). Los invitados usan una sesión anónima: pueden pedir, pero no vender.
+    function realUser() { return allowedUser() && request.auth.token.firebase.sign_in_provider != 'anonymous'; }
 
     // Perfil público (nombre, WhatsApp, facultad)
     match /users/{uid} {
       allow read: if true;
-      allow write: if isMe(uid) && allowedUser();
+      allow write: if isMe(uid) && realUser();
 
       // Ajustes privados del vendedor (datos para transferencia): solo el dueño
       match /private/{doc} {
@@ -23,7 +25,7 @@ service cloud.firestore {
     // Publicaciones: cualquiera puede verlas (sin iniciar sesión)
     match /products/{id} {
       allow read: if true;
-      allow create: if allowedUser()
+      allow create: if realUser()
         && request.resource.data.sellerId == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.title.size() <= 80
@@ -37,12 +39,12 @@ service cloud.firestore {
     // Fotos en tamaño completo de cada publicación
     match /productImages/{id} {
       allow read: if true;
-      allow create: if allowedUser() && request.resource.data.sellerId == request.auth.uid;
+      allow create: if realUser() && request.resource.data.sellerId == request.auth.uid;
       allow update: if isMe(resource.data.sellerId) && request.resource.data.sellerId == resource.data.sellerId;
       allow delete: if isMe(resource.data.sellerId);
     }
 
-    // Pedidos: solo los ven el comprador y el vendedor
+    // Pedidos: solo los ven el comprador (con cuenta o invitado) y el vendedor
     match /orders/{id} {
       allow read: if signedIn()
         && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid);

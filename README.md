@@ -20,6 +20,9 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Disponibilidad en tiempo real**: desde *Mis publicaciones* (o la página del producto) el vendedor cambia con un toque entre ⚡ Inmediato (con cuántos tiene listos) y 📅 Pre-orden.
 - **Métodos de pago por vendedor**: efectivo, transferencia o ambos. Se configura una vez en el perfil y se puede aplicar a todas las publicaciones. Los datos bancarios son privados: el comprador solo los ve cuando el vendedor acepta su pedido.
 - **Fotos en ImgBB**: se suben a ImgBB y Firestore solo guarda el enlace (clave en `imgbbKey` de `js/config.js`).
+- **Compra sin cuenta (invitado)**: el comprador llena nombre, WhatsApp y matrícula opcional. Sus pedidos se guardan en su dispositivo y, si después inicia sesión, pasan a su cuenta. Requiere activar **Anónimo** en Firebase → Authentication → Sign-in method. Se apaga con `guestCheckout: false`.
+- **Más info con cuenta**: a los invitados se les muestra la descripción recortada, una sola foto y sin WhatsApp del vendedor (`limitGuestDetails` en `js/config.js`).
+- **Detector de pedidos falsos**: marca como “⚠️ Posible fake” los pedidos con nombre al azar o de prueba, datos vacíos, WhatsApp inválido o repetido, cantidades raras o muchos pedidos pendientes del mismo comprador. Hay un filtro “Posibles fake” en Pedidos.
 
 ## Estructura
 
