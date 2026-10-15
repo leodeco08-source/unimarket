@@ -831,3 +831,36 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
   78%  { translate: 22px 0; filter: blur(0); }
   100% { translate: 0 0; }
 }
+
+/* =========================================================
+   Cobro por transferencia: captura única y datos listos para copiar
+   ========================================================= */
+.transfer-setup { display: flex; flex-direction: column; gap: 14px; }
+.transfer-setup h2 { margin-bottom: -6px; }
+.transfer-setup p { margin: 0; }
+.transfer-setup input[name=clabe], .transfer-setup input[name=card] { letter-spacing: .06em; font-variant-numeric: tabular-nums; }
+.field-hint { font-size: 12.5px; font-weight: 600; color: var(--muted); min-height: 0; }
+.field-hint:empty { display: none; }
+.field-hint.ok { color: var(--ok); }
+.field-hint.bad { color: var(--danger); }
+
+.tr-box { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--ok-soft); border: 1px solid color-mix(in srgb, var(--ok) 30%, transparent); }
+.tr-box > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tr-box strong { font-size: 14px; }
+.tr-box small { font-size: 12.5px; }
+.tr-box.missing { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.tr-box .btn { flex: none; background: var(--surface); }
+
+.transfer.pro { flex-direction: column; align-items: stretch; gap: 0; padding: 4px 14px 12px; background: var(--surface); border: 1.5px solid color-mix(in srgb, var(--ok) 45%, transparent); }
+.surface .transfer.pro, .order .transfer.pro { background: var(--surface); }
+.tr-title { font-weight: 800; font-size: 14.5px; padding: 10px 0 6px; color: var(--ok); }
+.tr-row { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px dashed var(--line); }
+.tr-row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.tr-row small { font-size: 11.5px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.tr-row b { font-size: 15px; font-variant-numeric: tabular-nums; letter-spacing: .02em; word-break: break-all; }
+.tr-row.big b { font-size: 20px; letter-spacing: -.01em; }
+.tr-row .btn { flex: none; gap: 5px; }
+.tr-row .btn .ic { width: 15px; height: 15px; }
+.btn.copied { background: var(--ok) !important; color: #fff !important; border-color: var(--ok) !important; }
+.tr-note { margin: 6px 0 0; font-size: 13px; font-style: italic; color: var(--muted); }
+.tr-foot { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); }

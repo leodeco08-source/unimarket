@@ -97,6 +97,131 @@
   }
   const isData = src => /^data:/.test(src);
 
+  /* ---------------------- datos para cobrar por transferencia ---------------------- */
+  // Bancos más comunes en México según los 3 primeros dígitos de la CLABE.
+  const BANKS = { '002': 'Banamex', '012': 'BBVA', '014': 'Santander', '021': 'HSBC', '030': 'BanBajío', '036': 'Inbursa', '042': 'Mifel', '044': 'Scotiabank', '058': 'Banregio', '059': 'Invex', '062': 'Afirme', '072': 'Banorte', '127': 'Banco Azteca', '130': 'Compartamos', '137': 'BanCoppel', '638': 'Nu México', '646': 'STP', '699': 'Fondeadora', '722': 'Mercado Pago', '728': 'Spin by OXXO' };
+  const onlyDigits = v => String(v || '').replace(/\D/g, '');
+  // CLABE: 18 dígitos y el último es un dígito verificador (pesos 3, 7, 1).
+  function clabeValid(c) {
+    if (!/^\d{18}$/.test(c)) return false;
+    const w = [3, 7, 1];
+    const sum = [...c.slice(0, 17)].reduce((a, d, i) => a + (Number(d) * w[i % 3]) % 10, 0);
+    return (10 - (sum % 10)) % 10 === Number(c[17]);
+  }
+  // Tarjeta: 16 dígitos y algoritmo de Luhn.
+  function cardValid(n) {
+    if (!/^\d{15,16}$/.test(n)) return false;
+    let sum = 0;
+    [...n].reverse().forEach((d, i) => { let x = Number(d); if (i % 2) { x *= 2; if (x > 9) x -= 9; } sum += x; });
+    return sum % 10 === 0;
+  }
+  const fmtClabe = c => c ? `${c.slice(0, 3)} ${c.slice(3, 6)} ${c.slice(6, 17)} ${c.slice(17)}` : '';
+  const fmtCard = n => n ? n.replace(/(\d{4})(?=\d)/g, '$1 ') : '';
+  const transferText = t => [t.holder && `Titular: ${t.holder}`, t.bank && `Banco: ${t.bank}`, t.clabe && `CLABE: ${t.clabe}`, t.card && `Tarjeta: ${t.card}`, t.note].filter(Boolean).join('\n');
+  const hasTransfer = t => !!(t && (t.clabe || t.card));
+  // Ajustes privados del vendedor (solo los lee él).
+  async function loadPriv(force) {
+    if (!state.user) return {};
+    if (force || !state.priv || state.priv.uid !== state.user.uid) {
+      const x = await B.getPrivate(state.user.uid).catch(() => ({}));
+      state.priv = { uid: state.user.uid, ...(x || {}) };
+    }
+    return state.priv;
+  }
+
+  // Ventana para capturar (una sola vez) los datos de cobro. Devuelve los datos guardados o null si se cancela.
+  function openTransferSetup(current = {}) {
+    return new Promise(resolve => {
+      let saved = null;
+      const m = openModal(`
+        <form class="transfer-setup" novalidate>
+          <h2>🏦 Datos para cobrar</h2>
+          <p class="muted small">Los pones una sola vez y se usan en todas tus ventas. Solo los verá quien te compre, <b>cuando aceptes su pedido</b>.</p>
+          <label class="field"><span>Nombre del titular *</span><input name="holder" maxlength="80" autocomplete="name" placeholder="Como aparece en tu cuenta"></label>
+          <label class="field"><span>CLABE interbancaria <em>18 dígitos</em></span><input name="clabe" inputmode="numeric" maxlength="24" placeholder="012 180 01234567890 1" autocomplete="off"><small class="field-hint" data-hint="clabe"></small></label>
+          <label class="field"><span>Número de tarjeta <em>opcional, para depósitos en OXXO o transferencias a tarjeta</em></span><input name="card" inputmode="numeric" maxlength="23" placeholder="4152 3138 0000 0000" autocomplete="off"><small class="field-hint" data-hint="card"></small></label>
+          <label class="field"><span>Banco</span><input name="bank" maxlength="40" list="bank-list" placeholder="Se detecta con la CLABE"><datalist id="bank-list">${[...new Set(Object.values(BANKS))].map(b => `<option value="${esc(b)}">`).join('')}</datalist></label>
+          <label class="field"><span>Nota para el comprador <em>opcional</em></span><input name="note" maxlength="120" placeholder="Ej. Mándame captura del comprobante por WhatsApp"></label>
+          <p class="notice warn small">Nunca compartas tu NIP, contraseñas ni códigos de tu banco. Solo CLABE o número de tarjeta.</p>
+          <p class="form-error" hidden></p>
+          <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Guardar datos</button>
+        </form>`, { cls: 'modal-sheet', onClose: () => resolve(saved) });
+      const form = $('form', m.el), F = form.elements, errEl = $('.form-error', form);
+      F.holder.value = current.holder || myName();
+      F.clabe.value = fmtClabe(current.clabe || '');
+      F.card.value = fmtCard(current.card || '');
+      F.bank.value = current.bank || '';
+      F.note.value = current.note || '';
+      let bankTouched = !!current.bank;
+      F.bank.addEventListener('input', () => { bankTouched = true; });
+      const hint = (k, msg, ok) => { const h = $(`[data-hint="${k}"]`, form); h.textContent = msg; h.className = 'field-hint ' + (ok ? 'ok' : msg ? 'bad' : ''); };
+      const check = () => {
+        const c = onlyDigits(F.clabe.value), n = onlyDigits(F.card.value);
+        if (!c) hint('clabe', '');
+        else if (c.length < 18) hint('clabe', `${c.length}/18 dígitos`);
+        else if (clabeValid(c)) {
+          const b = BANKS[c.slice(0, 3)];
+          hint('clabe', `✓ CLABE válida${b ? ' · ' + b : ''}`, true);
+          if (b && !bankTouched) F.bank.value = b;
+        } else hint('clabe', 'Esta CLABE no es válida: revisa los 18 dígitos.');
+        if (!n) hint('card', '');
+        else if (n.length < 16) hint('card', `${n.length}/16 dígitos`);
+        else hint('card', cardValid(n) ? '✓ Tarjeta válida' : 'Este número de tarjeta no es válido.', cardValid(n));
+      };
+      // Solo números, agrupados para que sea fácil revisarlos.
+      F.clabe.addEventListener('input', () => { const c = onlyDigits(F.clabe.value).slice(0, 18); F.clabe.value = fmtClabe(c) || c; check(); });
+      F.card.addEventListener('input', () => { F.card.value = fmtCard(onlyDigits(F.card.value).slice(0, 16)); check(); });
+      check();
+      form.onsubmit = e => {
+        e.preventDefault();
+        const t = { holder: F.holder.value.trim(), clabe: onlyDigits(F.clabe.value), card: onlyDigits(F.card.value), bank: F.bank.value.trim(), note: F.note.value.trim() };
+        const fail = msg => { errEl.textContent = msg; errEl.hidden = false; };
+        errEl.hidden = true;
+        if (t.holder.length < 3) return fail('Escribe el nombre del titular de la cuenta.');
+        if (!t.clabe && !t.card) return fail('Escribe tu CLABE o tu número de tarjeta.');
+        if (t.clabe && !clabeValid(t.clabe)) return fail('La CLABE no es válida: deben ser 18 dígitos correctos.');
+        if (t.card && !cardValid(t.card)) return fail('El número de tarjeta no es válido.');
+        if (!t.bank && t.clabe) t.bank = BANKS[t.clabe.slice(0, 3)] || '';
+        busy($('[data-submit]', form), async () => {
+          try {
+            await B.savePrivate(state.user.uid, { transfer: t, transferInfo: transferText(t) });
+            state.priv = { ...(state.priv || {}), uid: state.user.uid, transfer: t, transferInfo: transferText(t) };
+            saved = t;
+            toast('Datos para cobrar guardados 🏦');
+            m.close();
+          } catch (err) { fail(errMsg(err)); }
+        });
+      };
+    });
+  }
+  // Resumen en texto plano (se muestra con textContent).
+  const transferSummary = t => hasTransfer(t)
+    ? `${t.bank || 'Cuenta'} · ${t.clabe ? 'CLABE ••••' + t.clabe.slice(-4) : ''}${t.clabe && t.card ? ' · ' : ''}${t.card ? 'Tarjeta ••••' + t.card.slice(-4) : ''}`
+    : '';
+
+  // Lo que ve el comprador: cada dato con su botón de copiar.
+  function transferCard(o) {
+    const t = o.transfer;
+    if (!hasTransfer(t)) {
+      return o.transferInfo
+        ? `<div class="transfer"><div><small>🏦 Datos para transferir · ${money(o.total)}</small><p>${esc(o.transferInfo).replace(/\n/g, '<br>')}</p></div><button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(o.transferInfo)}">Copiar</button></div>`
+        : '<div class="transfer"><div><small>🏦 Pago por transferencia</small><p>Pídele los datos al vendedor por WhatsApp.</p></div></div>';
+    }
+    const ref = `HIUSU-${String(o.id || '').slice(-6).toUpperCase()}`;
+    const row = (label, shown, copy, big) => `<div class="tr-row ${big ? 'big' : ''}"><div><small>${label}</small><b>${esc(shown)}</b></div>${copy ? `<button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(copy)}" data-copy-label="${esc(label)}">${icon('copy')} Copiar</button>` : ''}</div>`;
+    return `<div class="transfer pro">
+      <div class="tr-title">🏦 Paga por transferencia</div>
+      ${row('Monto', money(o.total), String(Number(o.total) || ''), true)}
+      ${t.clabe ? row('CLABE interbancaria', fmtClabe(t.clabe), t.clabe) : ''}
+      ${t.card ? row('Número de tarjeta', fmtCard(t.card), t.card) : ''}
+      ${row('Titular', t.holder, t.holder)}
+      ${t.bank ? row('Banco', t.bank, '') : ''}
+      ${row('Concepto / referencia', ref, ref)}
+      ${t.note ? `<p class="tr-note">“${esc(t.note)}”</p>` : ''}
+      <p class="tr-foot">Después de pagar, manda tu comprobante al vendedor por WhatsApp.</p>
+    </div>`;
+  }
+
   /* ---------------------- invitados ---------------------- */
   // Con cuenta real (Google o correo). Un invitado tiene una sesión anónima solo para seguir sus pedidos.
   const loggedIn = () => !!(state.user && !state.user.anonymous);
@@ -118,7 +243,7 @@
     const byId = new Map(live.map(o => [o.id, o]));
     const list = cachedOrders();
     let changed = false;
-    list.forEach(c => { const l = byId.get(c.id); if (l && l.status !== c.status) { c.status = l.status; c.transferInfo = l.transferInfo; changed = true; } });
+    list.forEach(c => { const l = byId.get(c.id); if (l && l.status !== c.status) { c.status = l.status; c.transferInfo = l.transferInfo; c.transfer = l.transfer; changed = true; } });
     if (changed) store.set('hiusu_orders', list);
   }
 
@@ -259,6 +384,7 @@
     eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
     cash: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>',
+    copy: '<rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
     star: '<path d="m12 3 2.8 5.7 6.2.9-4.5 4.4 1 6.2L12 17.3 6.5 20.2l1-6.2L3 9.6l6.2-.9z"/>',
   };
   const icon = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n] || ''}</svg>`;
@@ -1046,8 +1172,7 @@
     }
     // Miniatura ya subida de cada foto (para no volver a subirla al guardar).
     const thumbOf = new Map(images.length && p.thumb ? [[images[0], p.thumb]] : []);
-    let priv = {};
-    B.getPrivate(state.user.uid).then(x => { priv = x || {}; syncPayHint(); }).catch(() => {});
+    loadPriv(true).then(() => syncPayHint()).catch(() => {});
     const MAX_IMG = 4;
     view.innerHTML = `
       <div class="container editor">
@@ -1092,7 +1217,7 @@
               <div class="field"><span>Pagos que aceptas *</span>
                 <div class="choice pay-choice">${C.paymentMethods.map(x => `<label><input type="checkbox" name="payments" value="${esc(x)}"><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
                 <small class="muted">Puedes cambiarlo para todas tus publicaciones desde <a class="link" href="#/panel/perfil">tu perfil</a>.</small>
-                <p class="notice warn small" id="pay-hint" hidden>Aún no tienes datos para transferencia. Agrégalos en <a class="link" href="#/panel/perfil">tu perfil</a> para que tus compradores puedan pagarte.</p>
+                <div class="tr-box" id="pay-hint" hidden><div><strong>🏦 Cobrarás por transferencia a</strong><small class="muted" id="ed-tr-summary"></small></div><button type="button" class="btn btn-ghost btn-sm" id="ed-tr-edit">Editar</button></div>
               </div>
               <label class="switch-row"><div><strong>Publicación activa</strong><small class="muted">Si la pausas, no aparecerá en el catálogo.</small></div>
                 <span class="switch"><input type="checkbox" name="active"><i></i></span></label>
@@ -1138,8 +1263,13 @@
     const chosenPays = () => $$('[name=payments]:checked', form).map(x => x.value);
     function syncPayHint() {
       const h = $('#pay-hint'); if (!h) return;
-      h.hidden = !(chosenPays().includes('Transferencia') && !(priv.transferInfo || '').trim());
+      const t = (state.priv || {}).transfer;
+      h.hidden = !chosenPays().includes('Transferencia');
+      h.classList.toggle('missing', !hasTransfer(t));
+      $('#ed-tr-summary').textContent = hasTransfer(t) ? transferSummary(t) : 'Aún no agregas tus datos para cobrar.';
+      $('#ed-tr-edit').textContent = hasTransfer(t) ? 'Editar' : 'Agregar';
     }
+    $('#ed-tr-edit').onclick = async () => { await openTransferSetup((state.priv || {}).transfer || {}); syncPayHint(); };
 
     const collect = () => ({
       title: F.title.value.trim(),
@@ -1199,7 +1329,16 @@
     form.onchange = e => {
       if (e.target.name === 'category') fillSubs('');
       if (e.target.name === 'mode') syncMode();
-      if (e.target.name === 'payments') syncPayHint();
+      if (e.target.name === 'payments') {
+        syncPayHint();
+        // Primera vez que marca transferencia: pedir los datos ahí mismo (luego quedan guardados).
+        if (e.target.value === 'Transferencia' && e.target.checked && !hasTransfer((state.priv || {}).transfer)) {
+          openTransferSetup().then(t => {
+            if (!t) { e.target.checked = false; toast('Para aceptar transferencias necesitas tus datos para cobrar.', 'info'); }
+            syncPayHint(); preview();
+          });
+        }
+      }
       preview(); pulse();
     };
     drawUp();
@@ -1473,9 +1612,8 @@
         <div><dt>Total</dt><dd><b>${money(o.total)}</b></dd></div>
       </dl>
       ${o.note ? `<p class="order-note">“${esc(o.note)}”</p>` : ''}
-      ${o.payment === 'Transferencia' && role === 'buyer' && o.status === 'aceptado' ? (o.transferInfo
-        ? `<div class="transfer"><div><small>🏦 Datos para transferir · ${money(o.total)}</small><p>${esc(o.transferInfo).replace(/\n/g, '<br>')}</p></div><button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(o.transferInfo)}">Copiar</button></div>`
-        : '<div class="transfer"><div><small>🏦 Pago por transferencia</small><p>Pídele los datos al vendedor por WhatsApp.</p></div></div>') : ''}
+      ${o.payment === 'Transferencia' && role === 'buyer' && o.status === 'aceptado' ? transferCard(o) : ''}
+      ${o.payment === 'Transferencia' && role === 'buyer' && o.status === 'pendiente' ? '<p class="cache-note">🏦 Cuando el vendedor acepte tu pedido, aquí aparecerán su CLABE y datos para transferir, listos para copiar.</p>' : ''}
       ${wa || actions ? `<footer>${wa ? `<a class="btn btn-wa btn-sm" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')} WhatsApp</a>` : ''}<span class="grow"></span>${actions}</footer>` : ''}
     </article>`;
   }
@@ -1494,9 +1632,14 @@
       if (act === 'accept') {
         let extra = {};
         if (o.payment === 'Transferencia') {
-          const priv = await B.getPrivate(state.user.uid).catch(() => ({}));
-          if ((priv.transferInfo || '').trim()) extra = { transferInfo: priv.transferInfo.trim() };
-          else toast('No tienes datos de transferencia en tu perfil: envíaselos al comprador por WhatsApp.', 'err', 6000);
+          const priv = await loadPriv(true);
+          let t = priv.transfer;
+          if (!hasTransfer(t) && !(priv.transferInfo || '').trim()) {
+            toast('Este comprador paga por transferencia: agrega tus datos para cobrar (solo una vez).', 'info', 5000);
+            t = await openTransferSetup();
+            if (!t) return toast('Para aceptar pagos por transferencia necesitas tus datos para cobrar.', 'err');
+          }
+          extra = hasTransfer(t) ? { transfer: t, transferInfo: transferText(t) } : { transferInfo: priv.transferInfo.trim() };
         }
         await busy(btn, async () => { await B.updateOrder(id, { status: 'aceptado', ...extra }); await adjustStock(-o.qty); });
         toast('Pedido aceptado. ¡Coordina la entrega! ✅');
@@ -1523,7 +1666,11 @@
     el.onclick = e => {
       const c = e.target.closest('[data-copy]');
       if (c) {
-        navigator.clipboard.writeText(c.dataset.copy).then(() => toast('Datos copiados 📋'), () => toast('No se pudo copiar', 'err'));
+        const what = c.dataset.copyLabel ? `${c.dataset.copyLabel} copiado` : 'Datos copiados';
+        navigator.clipboard.writeText(c.dataset.copy).then(() => {
+          toast(`${what} 📋`);
+          c.classList.add('copied'); setTimeout(() => c.classList.remove('copied'), 1500);
+        }, () => toast('No se pudo copiar', 'err'));
         return;
       }
       const b = e.target.closest('[data-act]');
@@ -1655,8 +1802,10 @@
           <h3 class="sec-gap">💳 Cómo te pagan</h3>
           <p class="muted small">Los compradores solo podrán elegir lo que marques.</p>
           <div class="choice pay-choice">${C.paymentMethods.map(x => `<label><input type="checkbox" name="payments" value="${esc(x)}"><span>${esc(payLabel(x))}</span></label>`).join('')}</div>
-          <label class="field" id="transfer-field"><span>Datos para transferencia <em>privado: solo lo ve quien te compre, cuando aceptes su pedido</em></span>
-            <textarea name="transferInfo" rows="3" maxlength="300" placeholder="Ej. BBVA · CLABE 012 345 678901234567&#10;A nombre de Ana López"></textarea></label>
+          <div class="tr-box" id="transfer-field">
+            <div><strong>🏦 Datos para cobrar por transferencia</strong><small class="muted" id="tr-summary">Cargando…</small></div>
+            <button type="button" class="btn btn-ghost btn-sm" id="tr-edit">Configurar</button>
+          </div>
           <label class="check-row"><input type="checkbox" name="applyAll" checked><span>Aplicar también a todas mis publicaciones</span></label>
           <button class="btn btn-primary" type="submit" data-submit>Guardar perfil</button>
         </form>
@@ -1676,10 +1825,30 @@
     F.studentCode.value = pr.studentCode || '';
     const pays = defaultPayments();
     $$('[name=payments]', el).forEach(x => (x.checked = pays.includes(x.value)));
-    const syncTransfer = () => { $('#transfer-field', el).hidden = !$$('[name=payments]', el).some(x => x.checked && x.value === 'Transferencia'); };
-    syncTransfer();
-    $('#pf').onchange = e => { if (e.target.name === 'payments') syncTransfer(); };
-    B.getPrivate(state.user.uid).then(x => { if (!F.transferInfo.value) F.transferInfo.value = (x && x.transferInfo) || ''; }).catch(() => {});
+    const trBox = $('#transfer-field', el);
+    const wantsTransfer = () => $$('[name=payments]', el).some(x => x.checked && x.value === 'Transferencia');
+    const drawTransfer = () => {
+      const t = (state.priv || {}).transfer;
+      trBox.hidden = !wantsTransfer();
+      $('#tr-summary', el).textContent = hasTransfer(t) ? transferSummary(t) + ` · ${t.holder}` : 'Aún no los agregas. Tus compradores los verán listos para copiar.';
+      $('#tr-edit', el).textContent = hasTransfer(t) ? 'Editar' : 'Agregar';
+      trBox.classList.toggle('missing', !hasTransfer(t));
+    };
+    const askTransfer = async () => {
+      const t = await openTransferSetup((state.priv || {}).transfer || {});
+      drawTransfer();
+      return t;
+    };
+    loadPriv(true).then(drawTransfer);
+    $('#tr-edit', el).onclick = askTransfer;
+    $('#pf').onchange = async e => {
+      if (e.target.name !== 'payments') return;
+      drawTransfer();
+      // Al activar transferencia por primera vez, pide los datos en ese momento.
+      if (e.target.value === 'Transferencia' && e.target.checked && !hasTransfer((await loadPriv()).transfer)) {
+        if (!await askTransfer()) { e.target.checked = false; drawTransfer(); toast('Para aceptar transferencias necesitas tus datos para cobrar.', 'info'); }
+      }
+    };
     $('#snd').onchange = e => {
       setPref('sound', e.target.checked);
       if (e.target.checked) { chime(); toast('Sonido activado 🔔', 'info'); }
@@ -1695,7 +1864,6 @@
       busy($('[data-submit]', el), async () => {
         try {
           await B.saveProfile(state.user.uid, data);
-          await B.savePrivate(state.user.uid, { transferInfo: F.transferInfo.value.trim() });
           if (applyAll) {
             const mine = await loadMine(true);
             const toUpdate = mine.filter(p => payList(p).join() !== payments.join());
