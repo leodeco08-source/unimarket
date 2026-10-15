@@ -682,7 +682,7 @@
           <span class="eyebrow">${esc(C.universityName)}</span>
           <h1>Compra y vende <span class="hl">dentro del campus</span></h1>
           <p class="hero-sub">Todo lo que antes buscabas en mil grupos de WhatsApp, ahora en un solo lugar.</p>
-          <label class="search">${icon('search')}<input id="q" type="search" enterkeyhint="search" placeholder="Busca brownies, apuntes, calculadoras…" value="${esc(f.q)}" autocomplete="off"></label>
+          <label class="search">${icon('search')}<input id="q" type="search" enterkeyhint="search" placeholder="Busca Avenas, Ropa, Laptops…" value="${esc(f.q)}" autocomplete="off"></label>
           <div class="hero-stats" id="hero-stats"></div>
         </div>
       </section>
