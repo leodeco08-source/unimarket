@@ -90,7 +90,7 @@ window.HIUSU_LEGAL = function (C) {
         ['Con quién compartimos tus datos',
           `<ul>
              <li><b>Con la otra parte de tu pedido:</b> el vendedor ve tu nombre, WhatsApp, matrícula (si la diste), nota y detalles del pedido; el comprador ve el nombre y WhatsApp del vendedor y, si aceptó un pago por transferencia, sus datos bancarios.</li>
-             <li><b>Proveedores que nos dan servicio</b> (encargados): Google Firebase (inicio de sesión y base de datos), ImgBB (almacenamiento de las fotos, que son públicas) y Vercel (alojamiento del sitio). Pueden estar fuera de México.</li>
+             <li><b>Proveedores que nos dan servicio</b> (encargados): Google Firebase (inicio de sesión y base de datos), ImgBB (almacenamiento de las fotos, que son públicas), Vercel (alojamiento del sitio) y Google reCAPTCHA (protección contra bots y abusos, que analiza datos técnicos de tu navegador). Pueden estar fuera de México.</li>
              <li>Autoridades, cuando una ley o una orden lo requiera.</li>
            </ul>
            <p>No vendemos ni rentamos tus datos.</p>`],
@@ -116,7 +116,7 @@ window.HIUSU_LEGAL = function (C) {
              <li><b>Preferencias:</b> vista de pedidos, sonido de avisos y si cerraste algún aviso.</li>
            </ul>`],
         ['Servicios de terceros',
-          `<p>El sitio carga tipografías de Google Fonts, las fotos desde ImgBB y los servicios de Google Firebase. Estos proveedores pueden registrar datos técnicos de la conexión (como tu dirección IP) según sus propias políticas.</p>`],
+          `<p>El sitio carga tipografías de Google Fonts, las fotos desde ImgBB, los servicios de Google Firebase y Google reCAPTCHA (que puede usar sus propias cookies para distinguir personas de bots). Estos proveedores pueden registrar datos técnicos de la conexión (como tu dirección IP) según sus propias políticas.</p>`],
         ['Cómo borrarlo',
           `<p>Puedes borrar estos datos en cualquier momento desde la configuración de tu navegador (borrar datos del sitio). Si lo haces, se cerrará tu sesión y perderás los pedidos de invitado guardados en ese dispositivo.</p>`],
       ],

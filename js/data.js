@@ -30,6 +30,14 @@
   /* ---------------------- FIREBASE ---------------------- */
   function FirebaseBackend() {
     firebase.initializeApp(fb);
+    // App Check: cada petición a Firebase lleva una prueba de que viene de esta página en un navegador real.
+    if (C.appCheckSiteKey && firebase.appCheck) {
+      try {
+        const P = C.appCheckProvider === 'v3' ? firebase.appCheck.ReCaptchaV3Provider : firebase.appCheck.ReCaptchaEnterpriseProvider;
+        firebase.appCheck().activate(new P(C.appCheckSiteKey), true);
+      }
+      catch (e) { console.warn('App Check', e); }
+    }
     const auth = firebase.auth();
     const db = firebase.firestore();
     const now = () => firebase.firestore.FieldValue.serverTimestamp();

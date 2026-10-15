@@ -83,6 +83,12 @@ window.APP_CONFIG = {
   // Pon '' para guardar las fotos comprimidas dentro de Firestore en lugar de ImgBB.
   imageUploadUrl: '/api/upload',
 
+  // Firebase App Check (invisible): Firebase solo atiende a la página real, no a bots o scripts.
+  // Usa una clave de "Fraud Defense / reCAPTCHA Enterprise" creada en Google Cloud (es pública).
+  // Vacía ('') = App Check apagado.
+  appCheckSiteKey: '6LdD9-8tAAAAACm0jxOn3o7C4vT7yESd3MVPM3d6',
+  appCheckProvider: 'enterprise',   // 'enterprise' (Fraud Defense) o 'v3' (reCAPTCHA clásico)
+
   // Sonido y vibración cuando llega un pedido nuevo (cada usuario puede apagarlo en su perfil)
   orderSound: true,
 
