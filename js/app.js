@@ -1273,6 +1273,10 @@
         };
         try {
           const oid = await B.createOrder(order);
+          // Pide al servidor que avise por correo al vendedor (si él lo activó). Si falla, el pedido igual quedó hecho.
+          if (B.mode === 'firebase') {
+            B.getIdToken().then(t => fetch('/api/notify-order', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${t || ''}` }, body: JSON.stringify({ orderId: oid }) })).catch(() => {});
+          }
           cacheOrder({ ...order, id: oid, createdAt: Date.now() });
           if (guest) setGuest({ name: gname, phone, code: gcode });
           if (phone && state.profile && !state.profile.phone) {
@@ -2106,6 +2110,8 @@
           <div class="account-info">${avatar(myName(), state.user.photo, 'lg')}<div><strong>${esc(state.user.email)}</strong><small class="muted">Sesión con ${prov}</small></div></div>
           <label class="switch-row"><div><strong>🔔 Sonido de pedidos nuevos</strong><small class="muted">Suena y vibra cuando alguien te compra (en este dispositivo).</small></div>
             <span class="switch"><input type="checkbox" id="snd" ${pref('sound', C.orderSound !== false) ? 'checked' : ''}><i></i></span></label>
+          <label class="switch-row"><div><strong>📧 Avisos de pedidos por correo</strong><small class="muted">Te escribimos desde <b>pedidos@hiusu.com</b> a <b>${esc(state.user.email || 'tu correo')}</b> cada vez que te hagan un pedido.</small></div>
+            <span class="switch"><input type="checkbox" id="mailnotif" ${pr.notifyOrders ? 'checked' : ''}><i></i></span></label>
           ${B.mode === 'demo' ? '<p class="notice info">Estás en modo demo. Conecta Firebase en <code>js/config.js</code> para usar cuentas reales.</p>' : ''}
           <button type="button" class="btn btn-danger-ghost btn-block" id="lo">${icon('logout')} Cerrar sesión</button>
         </section>
@@ -2140,6 +2146,14 @@
       if (e.target.value === 'Transferencia' && e.target.checked && !hasTransfer((await loadPriv()).transfer)) {
         if (!await askTransfer()) { e.target.checked = false; drawTransfer(); toast('Para aceptar transferencias necesitas tus datos para cobrar.', 'info'); }
       }
+    };
+    $('#mailnotif').onchange = async e => {
+      const on = e.target.checked;
+      try {
+        await B.saveProfile(state.user.uid, { notifyOrders: on });
+        state.profile = { ...(state.profile || {}), notifyOrders: on };
+        toast(on ? 'Te avisaremos por correo de cada pedido 📧' : 'Avisos por correo desactivados', 'info');
+      } catch (err) { e.target.checked = !on; toast(errMsg(err), 'err'); }
     };
     $('#snd').onchange = e => {
       setPref('sound', e.target.checked);
