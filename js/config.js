@@ -10,6 +10,17 @@
 window.APP_CONFIG = {
   appName: 'Hiusu',
   universityName: 'CUGDL',
+  tagline: 'Compra y vende dentro del campus, sin perderte en grupos de WhatsApp.',
+
+  // Datos del pie de página y de las páginas legales (Términos, Aviso de privacidad…).
+  legal: {
+    owner: 'Kodoxa Technologies',          // responsable de Hiusu
+    ownerUrl: 'https://kodoxa.com',
+    contactEmail: '',                       // ⚠️ pon un correo real: el Aviso de privacidad lo exige
+    city: 'Guadalajara, Jalisco, México',
+    instagram: '',                          // ej. 'https://www.instagram.com/hiusu.mx' (vacío = no se muestra)
+    updated: '14 de octubre de 2026',       // cámbiala cuando modifiques los textos legales
+  },
 
   firebase: {
     apiKey: 'AIzaSyCMulJeBpIBgWTbLSLWy2tgVLj20tYiRdw',

@@ -424,6 +424,7 @@
           <button class="btn btn-primary btn-block btn-lg" type="submit" data-submit>Entrar</button>
           <button type="button" class="link-btn login-only" data-forgot>¿Olvidaste tu contraseña?</button>
         </form>
+        <p class="legal-note">Al continuar aceptas los <a href="#/legal/terminos" data-close>Términos y condiciones</a> y el <a href="#/legal/privacidad" data-close>Aviso de privacidad</a>.</p>
         ${B.mode === 'demo' ? '<p class="demo-note">Modo demo: Google crea un usuario de prueba. Abre otra pestaña con otra cuenta para probar comprar y vender a la vez.</p>' : ''}
       </div>`, {
       cls: 'modal-auth',
@@ -618,10 +619,12 @@
     else if ((m = path.match(/^\/p\/([\w-]+)$/))) renderProduct(m[1]);
     else if (path === '/vender') requireAuth(() => renderEditor(null), 'publicar');
     else if ((m = path.match(/^\/editar\/([\w-]+)$/))) requireAuth(() => renderEditor(m[1]), 'publicar');
+    else if ((m = path.match(/^\/legal\/(\w+)$/))) renderLegal(m[1]);
     else if (path === '/panel/compras' && !loggedIn()) renderGuestPurchases();
     else if ((m = path.match(/^\/panel(?:\/(\w+))?$/))) requireAuth(() => renderPanel(m[1] || 'resumen'), 'panel');
     else view.innerHTML = `<div class="container">${emptyState('🧭', 'Página no encontrada', 'El enlace no existe o fue eliminado.', '<a class="btn btn-primary" href="#/">Ir al inicio</a>')}</div>`;
     updateNav(path);
+    if (!path.startsWith('/legal')) updateBadges(); // restaura el título de la pestaña
     window.scrollTo({ top: 0, behavior: 'instant' });
   }
 
@@ -675,9 +678,10 @@
 
   function renderHome() {
     const f = state.filter;
+    setTimeout(() => { state.heroAnimated = true; }, 0);
     view.innerHTML = `
       <section class="hero">
-        <span class="hero-art">${LOGO}</span>
+        <span class="hero-art ${state.heroAnimated ? '' : 'zoom-in'}">${LOGO}</span>
         <div class="hero-inner">
           <span class="eyebrow">${esc(C.universityName)}</span>
           <h1>Compra y vende <span class="hl">dentro del campus</span></h1>
@@ -919,6 +923,7 @@
         <div class="order-total"><span>Total</span><strong id="total">${money(p.price)}</strong></div>
         <button class="btn btn-primary btn-lg btn-block" type="submit" data-submit>Confirmar pedido</button>
         <p class="muted small center" id="pay-hint"></p>
+        <p class="legal-note center">Al confirmar aceptas los <a href="#/legal/terminos" data-close>Términos</a> y el <a href="#/legal/privacidad" data-close>Aviso de privacidad</a>. El pago y la entrega se acuerdan directamente con el vendedor.</p>
       </form>`, { cls: 'modal-sheet' });
     const form = $('form', m.el), F = form.elements;
     const payHint = () => {
@@ -1085,6 +1090,7 @@
                 <span class="switch"><input type="checkbox" name="active"><i></i></span></label>
             </section>
             <p class="form-error" hidden></p>
+            <p class="legal-note">Al publicar confirmas que tu producto cumple las <a href="#/legal/reglas" target="_blank">Reglas de la comunidad</a> y los <a href="#/legal/terminos" target="_blank">Términos</a>.</p>
             <div class="form-actions">
               ${id ? `<button type="button" class="btn btn-danger-ghost" id="del">${icon('trash')}<span class="hide-xs">Eliminar</span></button>` : ''}
               <span class="grow"></span>
@@ -1699,7 +1705,43 @@
     $('#lo').onclick = logout;
   }
 
+  /* ---------------------- páginas legales y de ayuda ---------------------- */
+  function renderLegal(slug) {
+    const pages = window.HIUSU_LEGAL ? window.HIUSU_LEGAL(C) : {};
+    const pg = pages[slug];
+    if (!pg) {
+      document.title = C.appName;
+      view.innerHTML = `<div class="container">${emptyState('🧭', 'Página no encontrada', 'El enlace no existe.', '<a class="btn btn-primary" href="#/">Ir al inicio</a>')}</div>`;
+      return;
+    }
+    const nav = [['terminos', 'Términos'], ['privacidad', 'Privacidad'], ['cookies', 'Cookies'], ['reglas', 'Reglas'], ['ayuda', 'Ayuda']];
+    document.title = `${pg.title} · ${C.appName}`;
+    view.innerHTML = `
+      <div class="container legal">
+        <nav class="legal-tabs">${nav.map(([k, t]) => `<a href="#/legal/${k}" class="${k === slug ? 'active' : ''}">${t}</a>`).join('')}</nav>
+        <article class="legal-doc">
+          <h1>${esc(pg.title)}</h1>
+          ${slug !== 'ayuda' ? `<p class="legal-updated">Última actualización: ${esc((C.legal || {}).updated || '')}</p>` : ''}
+          <p class="legal-intro">${esc(pg.intro)}</p>
+          ${pg.sections.map(([h, body]) => `<section><h2>${esc(h)}</h2>${body}</section>`).join('')}
+        </article>
+      </div>`;
+  }
+
+  function initFooter() {
+    const L = C.legal || {};
+    const tl = $('[data-tagline]'); if (tl) tl.textContent = C.tagline || '';
+    const ig = $('[data-footer="instagram"]');
+    if (ig && L.instagram) { ig.href = L.instagram; ig.hidden = false; }
+    const ct = $('[data-footer="contact"]');
+    if (ct && L.contactEmail) { ct.href = `mailto:${L.contactEmail}`; ct.hidden = false; }
+    const cp = $('[data-footer="copy"]');
+    if (cp) cp.innerHTML = `© ${new Date().getFullYear()} ${esc(C.appName)} · Un proyecto de ${L.ownerUrl
+      ? `<a href="${esc(L.ownerUrl)}" target="_blank" rel="noopener">${esc(L.owner || 'Kodoxa')}</a>` : esc(L.owner || '')}`;
+  }
+
   /* ---------------------- inicio ---------------------- */
+  initFooter();
   document.title = C.appName;
   $$('[data-appname]').forEach(e => (e.textContent = C.appName));
   $$('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));

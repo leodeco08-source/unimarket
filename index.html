@@ -4,17 +4,25 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#3F2D9C">
-  <meta name="description" content="Hiusu · compra y vende comida y más dentro de tu universidad.">
-  <meta property="og:title" content="Hiusu">
-  <meta property="og:description" content="Compra y vende dentro de tu universidad.">
+  <title>Hiusu · Compra y vende dentro del campus</title>
+  <meta name="description" content="Hiusu es el mercado de tu universidad: compra y vende comida, postres, libros, tecnología y más entre estudiantes, sin perderte en grupos de WhatsApp.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Hiusu">
+  <meta property="og:title" content="Hiusu · Compra y vende dentro del campus">
+  <meta property="og:description" content="El mercado de tu universidad: comida, libros, tecnología y más entre estudiantes.">
   <meta property="og:image" content="assets/hiusu-logo.jpg">
-  <title>Hiusu</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%233F2D9C'/%3E%3Cg transform='translate(2 10)'%3E%3Cg fill='none' stroke='white' stroke-linecap='round' stroke-width='4'%3E%3Cpath d='M6 13h9M3 20h15M10 27h10'/%3E%3Cpath d='M19 38h40'/%3E%3C/g%3E%3Ccircle cx='40' cy='9' r='4' fill='white'/%3E%3Cpath d='M21 32a19 19 0 0 1 38 0z' fill='white'/%3E%3Cpath d='M45 17a14 14 0 0 1 7 10' fill='none' stroke='%233F2D9C' stroke-width='3' stroke-linecap='round'/%3E%3C/g%3E%3C/svg%3E">
-  <link rel="apple-touch-icon" href="assets/hiusu-logo.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <!-- Íconos: Google usa /favicon.ico o los PNG en tamaños múltiplos de 48 px -->
+  <link rel="icon" href="/favicon.ico" sizes="48x48">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/assets/icons/icon-96.png" type="image/png" sizes="96x96">
+  <link rel="icon" href="/assets/icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/assets/icons/apple-touch-icon.png">
+  <link rel="manifest" href="/site.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=20261016">
+  <link rel="stylesheet" href="css/styles.css?v=20261018">
 </head>
 <body>
   <div id="demo-banner" class="demo-banner" hidden>
@@ -38,6 +46,39 @@
     <div class="page-loader"><span class="spinner"></span></div>
   </main>
 
+  <footer class="site-footer">
+    <div class="footer-inner">
+      <div class="footer-brand">
+        <a href="#/" class="logo"><span class="logo-mark"><svg class="logo-svg" viewBox="0 0 64 44" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="4"><path d="M6 13h9M3 20h15M10 27h10"/><path d="M19 38h40"/></g><circle cx="40" cy="9" r="4" fill="currentColor"/><path d="M21 32a19 19 0 0 1 38 0z" fill="currentColor"/><path class="shine" d="M45 17a14 14 0 0 1 7 10" fill="none" stroke-width="3" stroke-linecap="round"/></svg></span><span class="logo-text">Hiusu</span></a>
+        <p data-tagline>Compra y vende dentro del campus.</p>
+      </div>
+      <div class="footer-col">
+        <h4>Plataforma</h4>
+        <a href="#/">Explorar productos</a>
+        <a href="#/vender">Vender</a>
+        <a href="#/panel/compras">Mis compras</a>
+        <a href="#/panel">Mi panel</a>
+      </div>
+      <div class="footer-col">
+        <h4>Comunidad</h4>
+        <a href="#/legal/ayuda">Ayuda y preguntas</a>
+        <a href="#/legal/reglas">Reglas de la comunidad</a>
+        <a data-footer="instagram" target="_blank" rel="noopener" hidden>Instagram</a>
+        <a data-footer="contact" hidden>Contacto</a>
+      </div>
+      <div class="footer-col">
+        <h4>Legal</h4>
+        <a href="#/legal/terminos">Términos y condiciones</a>
+        <a href="#/legal/privacidad">Aviso de privacidad</a>
+        <a href="#/legal/cookies">Política de cookies</a>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span data-footer="copy">© Hiusu</span>
+      <span class="footer-note">Proyecto independiente, no afiliado oficialmente a ninguna universidad.</span>
+    </div>
+  </footer>
+
   <nav class="bottomnav" aria-label="Navegación principal">
     <a href="#/" data-nav="home" data-icon="home"><span>Inicio</span></a>
     <a href="#/panel/compras" data-nav="compras" data-icon="bag"><span>Compras</span></a>
@@ -55,9 +96,10 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
 
-  <script src="js/config.js?v=20261016"></script>
-  <script src="js/names.js?v=20261016"></script>
-  <script src="js/data.js?v=20261016"></script>
-  <script src="js/app.js?v=20261016"></script>
+  <script src="js/config.js?v=20261018"></script>
+  <script src="js/names.js?v=20261018"></script>
+  <script src="js/legal.js?v=20261018"></script>
+  <script src="js/data.js?v=20261018"></script>
+  <script src="js/app.js?v=20261018"></script>
 </body>
 </html>

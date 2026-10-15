@@ -25,6 +25,8 @@ Marketplace para comprar y vender dentro de la universidad. Hecho con **HTML + C
 - **Detector de pedidos falsos**: marca como “⚠️ Posible fake” los pedidos con nombre al azar o de prueba, datos vacíos, WhatsApp inválido o repetido, cantidades raras o muchos pedidos pendientes del mismo comprador. Hay un filtro “Posibles fake” en Pedidos.
 - **Nombres reales**: el detector usa una lista de nombres y apellidos comunes (`js/names.js`); si el nombre no se parece a ninguno, se marca como posible fake. Puedes agregar nombres a esa lista.
 - **WhatsApp con lada**: selector de país con 🇲🇽 +52 preseleccionado. Solo acepta números y exige los dígitos exactos del país (10 en México); si faltan dice “No es un número de teléfono válido”. Los países se editan en `phoneCountries` de `js/config.js`.
+- **Pie de página y páginas legales**: Términos y condiciones, Aviso de privacidad (LFPDPPP), Política de cookies, Reglas de la comunidad y Ayuda, en `#/legal/...`. Los datos (responsable, correo, ciudad, Instagram) se editan en `legal` de `js/config.js`. Son una base: conviene que un abogado los revise.
+- **Favicon real** (`favicon.ico`, PNG de 48 px en adelante y `site.webmanifest`) para que Google muestre el logo en los resultados.
 
 ## Estructura
 
@@ -33,6 +35,8 @@ index.html        Estructura base (header, barra inferior, scripts)
 css/styles.css    Todos los estilos
 js/config.js      ⚙️  Configuración: Firebase, nombre, categorías, lugares, moneda
 js/names.js       Nombres y apellidos comunes (detector de fakes)
+js/legal.js       Textos de Términos, Aviso de privacidad, Cookies, Reglas y Ayuda
+favicon.ico, favicon.svg, assets/icons/, site.webmanifest   Íconos (Google, celulares)
 js/data.js        Capa de datos (Firebase real o modo demo con localStorage)
 js/app.js         Interfaz: rutas, catálogo, pedidos, editor y panel
 firestore.rules   Reglas de seguridad para Firestore
