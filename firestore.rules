@@ -63,7 +63,7 @@ service cloud.firestore {
     // ---------- Publicaciones ----------
     function validProduct(p) {
       return p.keys().hasOnly(['title', 'price', 'stock', 'category', 'sub', 'mode', 'description', 'spot', 'schedule', 'phone',
-                               'payments', 'active', 'thumb', 'images', 'sold', 'sellerId', 'sellerName', 'sellerPhoto', 'createdAt', 'updatedAt'])
+                               'payments', 'active', 'thumb', 'images', 'sold', 'options', 'sellerId', 'sellerName', 'sellerPhoto', 'createdAt', 'updatedAt'])
         && txt(p.title, 80) && p.title.size() >= 3
         && p.price is number && p.price >= 0 && p.price <= 1000000
         && (p.get('stock', null) == null || (p.stock is int && p.stock >= 0 && p.stock <= 100000))
@@ -75,6 +75,8 @@ service cloud.firestore {
         && optTxt(p, 'thumb', 60000)
         && (!p.keys().hasAny(['images']) || (p.images is list && p.images.size() <= 4))
         && (!p.keys().hasAny(['sold']) || (p.sold is int && p.sold >= 0 && p.sold <= 10000000))
+        // Opciones para elegir (ej. "Frutas: elige 2"): máximo 4 grupos.
+        && (!p.keys().hasAny(['options']) || (p.options is list && p.options.size() <= 4))
         && txt(p.sellerName, 60) && optTxt(p, 'sellerPhoto', 500);
     }
     match /products/{id} {
@@ -108,7 +110,7 @@ service cloud.firestore {
       let p = productOf(o.productId);
       return o.keys().hasOnly(['productId', 'productTitle', 'productThumb', 'category', 'price', 'qty', 'total',
                                'sellerId', 'sellerName', 'sellerPhone', 'buyerId', 'buyerName', 'buyerEmail', 'buyerPhone',
-                               'buyerCode', 'guest', 'spot', 'payment', 'note', 'status', 'mode', 'pickupAt', 'createdAt', 'updatedAt'])
+                               'buyerCode', 'guest', 'spot', 'payment', 'note', 'options', 'status', 'mode', 'pickupAt', 'createdAt', 'updatedAt'])
         && o.buyerId == request.auth.uid
         && o.status == 'pendiente'
         && o.createdAt == request.time && o.updatedAt == request.time
@@ -127,7 +129,7 @@ service cloud.firestore {
         && o.guest is bool
         && txt(o.buyerName, 60) && txt(o.buyerPhone, 20) && txt(o.buyerCode, 20)
         && (o.buyerEmail == '' || o.buyerEmail == request.auth.token.get('email', ''))
-        && txt(o.spot, 60) && txt(o.note, 300);
+        && txt(o.spot, 60) && txt(o.note, 300) && optTxt(o, 'options', 300);
     }
     function validTransition(from, to) {
       return (from == 'pendiente' && to in ['aceptado', 'rechazado'])

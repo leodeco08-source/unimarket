@@ -45,6 +45,12 @@
   function pref(k, d) { try { const v = localStorage.getItem('cm_pref_' + k); return v == null ? d : JSON.parse(v); } catch { return d; } }
   function setPref(k, v) { try { localStorage.setItem('cm_pref_' + k, JSON.stringify(v)); } catch {} }
   const isPre = p => p.mode === 'preorden';
+  // Opciones elegidas en un pedido ("Frutas: Fresa, Uva · Toppings: Nuez") → [['Frutas', ['Fresa', 'Uva']], …]
+  const parseOpts = s => String(s || '').split(' · ').map(part => {
+    const i = part.indexOf(': ');
+    return i < 0 ? ['', [part]] : [part.slice(0, i), part.slice(i + 2).split(', ').filter(Boolean)];
+  }).filter(([, v]) => v.length && v[0]);
+  const optsHtml = s => `<div class="order-opts">${parseOpts(s).map(([k, v]) => `<span>${k ? `<b>${esc(k)}:</b> ` : ''}${v.map(esc).join(', ')}</span>`).join('')}</div>`;
   const modeBadge = p => isPre(p)
     ? '<span class="mode-badge pre">📅 Pre-orden</span>'
     : '<span class="mode-badge now">⚡ Inmediato</span>';
@@ -1075,6 +1081,7 @@
               <li>${icon('box')}<div><small>Disponibles</small><strong>${isPre(p) ? 'Sobre pedido' : p.stock == null ? 'Sin límite' : soldOut ? 'Agotado' : p.stock}</strong></div></li>
               <li>${icon('cash')}<div><small>Aceptan</small><strong>${payList(p).map(payLabel).join(' · ')}</strong></div></li>
             </ul>
+            ${(p.options || []).length ? `<div class="opt-info"><h3>Tú eliges</h3>${p.options.map(g => `<div><b>${esc(g.name)} · hasta ${g.pick}</b><span>${g.choices.map(esc).join(' · ')}</span></div>`).join('')}</div>` : ''}
             ${desc ? `<div class="desc"><h3>Descripción</h3><p>${esc(shortDesc).replace(/\n/g, '<br>')}</p>${shortDesc !== desc ? '<button type="button" class="link-btn" data-unlock>🔒 Ver descripción completa</button>' : ''}</div>` : ''}
             ${limited ? `<div class="unlock-card">
               <div><strong>🔓 Desbloquea toda la info</strong><small>Descripción completa, todas las fotos, WhatsApp del vendedor y tus pedidos en cualquier dispositivo.</small></div>
@@ -1083,7 +1090,7 @@
             <div class="seller-card">
               ${avatar(p.sellerName, p.sellerPhoto, 'lg')}
               <div><small class="muted">Vendido por</small><strong>${esc(p.sellerName)}</strong>
-                <span class="muted small" id="seller-stats">${sellerSales(p.sellerId)} ventas · Publicado ${timeAgo(p.createdAt)}</span></div>
+                <span class="muted small" id="seller-stats">${sellerSales(p.sellerId) || p.sold} ventas · Publicado ${timeAgo(p.createdAt)}</span></div>
             </div>
             <section class="reviews" id="reviews"><h3>Reseñas</h3><p class="muted small">Cargando…</p></section>
             ${own ? '' : `<div class="report-links"><button type="button" class="link-btn" data-report="product">⚑ Reportar publicación</button><span>·</span><button type="button" class="link-btn" data-report="user">Reportar al vendedor</button></div>`}
@@ -1137,7 +1144,7 @@
     const box = $('#reviews');
     if (!box) return;
     const ss = $('#seller-stats');
-    if (ss && sellR.length) ss.innerHTML = `${starsHtml(avgOf(sellR), 'sm')} <b>${avgOf(sellR).toFixed(1)}</b> (${sellR.length}) · ${sellerSales(p.sellerId)} ventas`;
+    if (ss && sellR.length) ss.innerHTML = `${starsHtml(avgOf(sellR), 'sm')} <b>${avgOf(sellR).toFixed(1)}</b> (${sellR.length}) · ${sellerSales(p.sellerId) || p.sold} ventas`;
     const social = $('#detail-social');
     if (social && prodR.length) social.insertAdjacentHTML('afterbegin', `<span>${starsHtml(avgOf(prodR), 'sm')} <b>${avgOf(prodR).toFixed(1)}</b> · ${prodR.length} reseña${prodR.length === 1 ? '' : 's'}</span>`);
     if (!prodR.length) {
@@ -1179,6 +1186,7 @@
     if (state.user && state.user.uid === p.sellerId) return toast('Esta es tu propia publicación', 'err');
     const g = getGuest();
     const pre = isPre(p);
+    const opts = p.options || [];
     const max = pre || p.stock == null ? 50 : p.stock;
     const minPickup = Date.now() + 60 * 60e3;
     if (max <= 0) return toast('Este producto está agotado', 'err');
@@ -1202,6 +1210,12 @@
           <div class="stepper"><button type="button" data-step="-1" aria-label="Menos">−</button><output id="qty">1</output><button type="button" data-step="1" aria-label="Más">+</button>
           ${p.stock != null ? `<small class="muted">${p.stock} disponibles</small>` : ''}</div>
         </div>
+        ${opts.length ? `<div class="opt-groups">${opts.map((g, gi) => `
+          <fieldset class="opt-group" data-g="${gi}" data-pick="${g.pick}">
+            <legend>${esc(g.name)} <small class="opt-count">Hasta ${g.pick}</small></legend>
+            <div class="opt-chips">${g.choices.map(c => `<label><input type="checkbox" value="${esc(c)}"><span>${esc(c)}</span></label>`).join('')}</div>
+          </fieldset>`).join('')}
+          <small class="muted" id="opt-multi" hidden>¿Pides varias y las quieres distintas? Escríbelo en la nota.</small></div>` : ''}
         ${pre ? `<label class="field"><span>¿Para cuándo lo quieres? *</span>
           <input name="pickup" type="datetime-local" min="${toLocalInput(minPickup)}" value="${toLocalInput(Date.now() + 24 * 3600e3)}">
           ${p.schedule ? `<small class="muted">Horario del vendedor: ${esc(p.schedule)}</small>` : ''}</label>` : ''}
@@ -1232,8 +1246,27 @@
       $('#total', m.el).textContent = money(p.price * qty);
       $('[data-step="-1"]', m.el).disabled = qty <= 1;
       $('[data-step="1"]', m.el).disabled = qty >= max;
+      const multi = $('#opt-multi', m.el); if (multi) multi.hidden = qty < 2;
     };
     sync();
+    // Al pasar del límite, se desmarca la opción elegida primero (así se puede cambiar sin desmarcar a mano).
+    $$('.opt-group', m.el).forEach(fs => {
+      const pick = Number(fs.dataset.pick), order = [];
+      const draw = () => {
+        const n = order.length;
+        $('.opt-count', fs).textContent = n ? `${n}/${pick} ✓` : `Hasta ${pick}`;
+        fs.classList.toggle('done', n > 0);
+      };
+      fs.addEventListener('change', e => {
+        const box = e.target;
+        const i = order.indexOf(box); if (i >= 0) order.splice(i, 1);
+        if (box.checked) { order.push(box); if (order.length > pick) order.shift().checked = false; }
+        draw();
+      });
+    });
+    // Elegir es opcional: puedes escoger menos (ej. pura uva) o ninguno; los grupos vacíos no se mandan.
+    const readOpts = () => opts.map((g, gi) => [g.name, $$(`.opt-group[data-g="${gi}"] input:checked`, m.el).map(x => x.value)])
+      .filter(([, v]) => v.length).map(([k, v]) => `${k}: ${v.join(', ')}`).join(' · ').slice(0, 300);
     $('.stepper', m.el).onclick = e => {
       const b = e.target.closest('[data-step]'); if (!b) return;
       qty = Math.min(max, Math.max(1, qty + Number(b.dataset.step)));
@@ -1245,6 +1278,7 @@
     bindPhone(form, guest ? 'gphone' : 'phone');
     form.onsubmit = async e => {
       e.preventDefault();
+      const chosen = opts.length ? readOpts() : '';
       let pickupAt = null;
       if (pre) {
         pickupAt = F.pickup.value ? new Date(F.pickup.value).getTime() : NaN;
@@ -1279,6 +1313,7 @@
           spot: F.spot.value, payment: F.pay.value, note: F.note.value.trim(), status: 'pendiente',
           mode: pre ? 'preorden' : 'inmediato', pickupAt, buyerCode: guest ? gcode : (state.profile && state.profile.studentCode) || '',
         };
+        if (chosen) order.options = chosen;
         try {
           const oid = await B.createOrder(order);
           // Pide al servidor que avise por correo al vendedor (si él lo activó). Si falla, el pedido igual quedó hecho.
@@ -1299,12 +1334,13 @@
   }
 
   function orderSuccess(o, guest = false) {
-    const wa = waLink(o.sellerPhone, `Hola ${o.sellerName}, te hice un pedido en ${C.appName}: ${o.qty}× ${o.productTitle} (${money(o.total)}). Entrega: ${o.spot}${o.pickupAt ? ', ' + fmtDate(o.pickupAt) : ''}.`);
+    const wa = waLink(o.sellerPhone, `Hola ${o.sellerName}, te hice un pedido en ${C.appName}: ${o.qty}× ${o.productTitle} (${money(o.total)}).${o.options ? ` ${o.options}.` : ''} Entrega: ${o.spot}${o.pickupAt ? ', ' + fmtDate(o.pickupAt) : ''}.`);
     const m = openModal(`
       <div class="success">
         <div class="success-check">${icon('check')}</div>
         <h2>¡Pedido enviado!</h2>
         <p class="muted">${esc(o.sellerName)} recibió tu pedido de <b>${o.qty}× ${esc(o.productTitle)}</b>${o.pickupAt ? ` para el <b>${esc(fmtDate(o.pickupAt))}</b>` : ''}. Te avisaremos aquí cuando lo acepte.</p>
+        ${o.options ? optsHtml(o.options) : ''}
         <div class="success-actions">
           ${wa ? `<a class="btn btn-wa btn-block" href="${esc(wa)}" target="_blank" rel="noopener">${icon('chat')} Avisar por WhatsApp</a>` : ''}
           <a class="btn btn-primary btn-block" href="#/panel/compras" data-close>Ver mis compras</a>
@@ -1372,6 +1408,11 @@
               </div>
               <label class="field" id="sub-field"><span>Estilo / subcategoría</span><select name="sub"></select></label>
               <label class="field"><span>Descripción</span><textarea name="description" rows="4" maxlength="1000" placeholder="Cuenta los detalles: sabor, estado, talla, qué incluye…"></textarea><small class="counter" id="cnt"></small></label>
+              <div class="field"><span>Opciones para elegir <em>opcional</em></span>
+                <small class="muted">Ej. “Frutas: hasta 2” o “Sabor: hasta 1”. El comprador escoge al pedir (puede elegir menos) y te llega en cada pedido.</small>
+                <div class="opt-editor" id="opt-ed"></div>
+                <button type="button" class="btn btn-ghost btn-sm" id="opt-add">＋ Agregar grupo de opciones</button>
+              </div>
             </section>
             <section class="form-sec">
               <h3>Entrega y contacto</h3>
@@ -1418,6 +1459,26 @@
     fillSubs(p.sub);
     syncMode();
     F.description.value = p.description || '';
+    const optEd = $('#opt-ed'), optAdd = $('#opt-add');
+    const addOptRow = (g = { name: '', pick: 1, choices: [] }) => {
+      optEd.insertAdjacentHTML('beforeend', `<div class="opt-row" data-r>
+        <div class="opt-row-head">
+          <input data-o="name" maxlength="30" placeholder="Nombre (ej. Frutas)" value="${esc(g.name)}">
+          <label class="opt-pick">Hasta <input data-o="pick" type="number" inputmode="numeric" min="1" max="10" value="${g.pick}"></label>
+          <button type="button" class="btn-icon" data-opt-del aria-label="Quitar grupo">${icon('x')}</button>
+        </div>
+        <textarea data-o="choices" rows="2" maxlength="500" placeholder="Opciones separadas por coma: Fresa, Uva verde, Manzana, Plátano">${esc(g.choices.join(', '))}</textarea>
+      </div>`);
+      optAdd.hidden = $$('[data-r]', optEd).length >= 4;
+    };
+    (p.options || []).forEach(addOptRow);
+    optAdd.onclick = () => { addOptRow(); $('[data-r]:last-child [data-o=name]', optEd).focus(); };
+    optEd.onclick = e => { const b = e.target.closest('[data-opt-del]'); if (b) { b.closest('[data-r]').remove(); optAdd.hidden = false; } };
+    const readOptRows = () => $$('[data-r]', optEd).map(r => {
+      const v = k => $(`[data-o=${k}]`, r).value;
+      const choices = [...new Set(v('choices').split(/[,\n]/).map(x => x.trim().replace(/\s+/g, ' ').slice(0, 30)).filter(Boolean))].slice(0, 15);
+      return { name: v('name').trim().slice(0, 30), pick: Math.max(1, Math.min(10, parseInt(v('pick'), 10) || 1)), choices };
+    }).filter(g => g.name || g.choices.length);
     F.spot.value = p.spot || '';
     F.schedule.value = p.schedule || '';
     bindPhone(form, 'phone');
@@ -1448,6 +1509,7 @@
       phone: F.phone.value ? `+${countryOf(F.phone_cc.value).code}${F.phone.value.replace(/\D/g, '')}` : '',
       payments: chosenPays(),
       active: F.active.checked,
+      options: readOptRows(),
     });
     const preview = () => {
       const d = collect();
@@ -1587,6 +1649,11 @@
       if (!ph.ok) return fail(ph.msg);
       d.phone = ph.value;
       if (!d.payments.length) return fail('Elige al menos un método de pago.');
+      for (const g of d.options) {
+        if (!g.name) return fail('Ponle nombre a cada grupo de opciones (ej. Frutas).');
+        if (g.choices.length < 2) return fail(`“${g.name}” necesita al menos 2 opciones, separadas por coma.`);
+        if (g.pick > g.choices.length) return fail(`En “${g.name}” pusiste hasta ${g.pick}, pero solo hay ${g.choices.length} opciones.`);
+      }
       if (isBlocked()) return;
       if (!(state.profile && state.profile.nameConfirmed)) return askName(() => form.requestSubmit());
       if (!await B.canSell()) {
@@ -1619,6 +1686,7 @@
             thumb = images[0] ? await compressImage(images[0], 420, 0.7) : '';
           }
           const data = { ...d, thumb, sellerId: state.user.uid, sellerName: myName(), sellerPhoto: state.user.photo || '' };
+          if (!d.options.length && !(p.options || []).length) delete data.options;
           if (urls) data.images = urls;
           let pid = id;
           if (id) await B.updateProduct(id, data);
@@ -1832,8 +1900,8 @@
     const steps = ['pendiente', 'aceptado', 'entregado'];
     const idx = steps.indexOf(o.status);
     const wa = waLink(other.phone, role === 'seller'
-      ? `Hola ${o.buyerName}, soy ${myName()} de ${C.appName}. Sobre tu pedido de ${o.qty}× ${o.productTitle}:`
-      : `Hola ${o.sellerName}, te escribo por mi pedido en ${C.appName}: ${o.qty}× ${o.productTitle}.`);
+      ? `Hola ${o.buyerName}, soy ${myName()} de ${C.appName}. Sobre tu pedido de ${o.qty}× ${o.productTitle}${o.options ? ` (${o.options})` : ''}:`
+      : `Hola ${o.sellerName}, te escribo por mi pedido en ${C.appName}: ${o.qty}× ${o.productTitle}${o.options ? ` (${o.options})` : ''}.`);
     let actions = '';
     if (role === 'seller') {
       if (o.status === 'pendiente') actions = `<button type="button" class="btn btn-ghost btn-sm" data-act="reject" data-id="${o.id}">Rechazar</button><button type="button" class="btn btn-primary btn-sm" data-act="accept" data-id="${o.id}">${icon('check')} Aceptar</button>`;
@@ -1856,6 +1924,7 @@
       ${fk.suspect ? `<div class="fake-flag"><b>⚠️ Posible fake</b><span>${fk.reasons.map(esc).join(' · ')}</span></div>` : ''}
       ${o.cachedOnly ? '<p class="cache-note">📱 Guardado en este dispositivo · el estado puede no estar actualizado. Inicia sesión con la misma cuenta del pedido para verlo en vivo.</p>' : ''}
       ${o.pickupAt ? `<div class="pickup ${o.pickupAt < Date.now() && o.status !== 'entregado' ? 'late' : ''}">${icon('clock')}<span>Pre-orden para <b>${esc(fmtDate(o.pickupAt))}</b></span></div>` : ''}
+      ${o.options ? optsHtml(o.options) : ''}
       ${idx >= 0 && !compact ? `<ol class="progress">${steps.map((st, i) => `<li class="${i <= idx ? 'done' : ''}"><i></i>${STATUS[st].label}</li>`).join('')}</ol>` : ''}
       <dl class="order-meta">
         <div><dt>${other.label}</dt><dd>${esc(other.name || 'Sin nombre')}${role === 'seller' && o.buyerCode ? `<small class="muted"> · ${esc(o.buyerCode)}</small>` : ''}${role === 'seller' && o.guest ? ' <span class="tag-guest">Invitado</span>' : ''}</dd></div>
@@ -1951,7 +2020,7 @@
         ['aceptado', '🍳 En proceso', 'Arrastra a “Entregados” al terminar'],
         ['entregado', '✅ Entregados', 'Ventas completadas'],
       ];
-      el.innerHTML = toggle + `<div class="kanban">${cols.map(([st, title, hint]) => {
+      el.innerHTML = toggle + prepList(so) + `<div class="kanban">${cols.map(([st, title, hint]) => {
         const items = so.filter(o => o.status === st);
         const shown = st === 'entregado' ? items.slice(0, 15) : items;
         return `<section class="kb-col" data-col="${st}">
@@ -1972,7 +2041,7 @@
       const labels = { todos: 'Todos', pendiente: 'Pendientes', aceptado: 'Aceptados', entregado: 'Entregados', cerrado: 'Cancelados', fake: '⚠️ Posibles fake' };
       const f = state.orderFilter in groups ? state.orderFilter : 'todos';
       const list = groups[f];
-      el.innerHTML = toggle + `
+      el.innerHTML = toggle + prepList(so) + `
         <div class="chips small" id="of">${Object.keys(groups).map(k => `<button class="chip ${k === f ? 'active' : ''}" data-f="${k}">${labels[k]} <span class="chip-n">${groups[k].length}</span></button>`).join('')}</div>
         ${list.length ? `<div class="orders">${list.map(o => orderCard(o, 'seller')).join('')}</div>`
           : emptyState('📭', f === 'todos' ? 'Todavía no tienes pedidos' : `Sin pedidos ${labels[f].toLowerCase()}`, 'Los pedidos de tus compradores llegan aquí en tiempo real.')}`;
@@ -1983,7 +2052,30 @@
       state.ordersView = b.dataset.v; setPref('ordersView', state.ordersView);
       tabPedidos(el);
     };
+    const prep = $('.prep', el); if (prep) prep.ontoggle = () => setPref('prepOpen', prep.open);
     bindOrderActions(el);
+  }
+
+  // Cuánto preparar de cada opción, sumando los pedidos nuevos y en proceso (ej. "Fresa 8 · Plátano 5").
+  function prepList(orders) {
+    const active = orders.filter(o => (o.status === 'pendiente' || o.status === 'aceptado') && o.options);
+    if (!active.length) return '';
+    const byProduct = new Map();
+    active.forEach(o => {
+      const e = byProduct.get(o.productId) || { title: o.productTitle, qty: 0, groups: new Map() };
+      e.qty += o.qty;
+      parseOpts(o.options).forEach(([g, list]) => {
+        const m = e.groups.get(g) || new Map();
+        list.forEach(c => m.set(c, (m.get(c) || 0) + o.qty));
+        e.groups.set(g, m);
+      });
+      byProduct.set(o.productId, e);
+    });
+    return `<details class="prep" ${pref('prepOpen', true) ? 'open' : ''}><summary>🧾 Para preparar <small class="muted">· pedidos nuevos y en proceso</small></summary>
+      ${[...byProduct.values()].map(e => `<div class="prep-item"><strong>${e.qty}× ${esc(e.title)}</strong>
+        ${[...e.groups].map(([g, m]) => `<div class="prep-row"><span>${esc(g || 'Opciones')}</span><div>${[...m].sort((a, b) => b[1] - a[1]).map(([c, n]) => `<i>${esc(c)} <b>${n}</b></i>`).join('')}</div></div>`).join('')}
+      </div>`).join('')}
+    </details>`;
   }
 
   // Arrastrar tickets entre columnas (en computadora). En celular se usan los botones.
@@ -2418,6 +2510,13 @@
   $$('[data-appname]').forEach(e => (e.textContent = C.appName));
   $$('[data-icon]').forEach(el => el.insertAdjacentHTML('afterbegin', icon(el.dataset.icon)));
   if (B.mode === 'demo') $('#demo-banner').hidden = false;
+  if (B.demoPreset) {
+    const who = { estrella: 'Estrella' }[B.demoPreset] || B.demoPreset;
+    const q = `?demo=${encodeURIComponent(B.demoPreset)}`;
+    $('#demo-banner').innerHTML = B.demoBuyer
+      ? `<strong>Demo</strong> · Vista del <b>comprador</b>. Haz un pedido y míralo llegar en la pestaña de ${esc(who)}. <a href="${q}&as=vendedor#/panel/pedidos">Volver a ${esc(who)}</a>`
+      : `<strong>Demo</strong> · Estás viendo ${esc(C.appName)} como <b>${esc(who)}</b>. Datos de ejemplo, solo en este navegador. <a href="${q}&as=comprador#/" target="_blank" rel="noopener">👀 Ver como comprador</a> · <a href="${q}&reset">Reiniciar</a>`;
+  }
   if (location.protocol === 'file:') {
     const b = $('#demo-banner');
     b.classList.add('warn');

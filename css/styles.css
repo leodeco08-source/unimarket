@@ -797,10 +797,12 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 .footer-bottom { max-width: 1180px; margin: 0 auto; padding: 16px 16px 22px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--muted); }
 .footer-bottom a { color: var(--brand); font-weight: 600; }
 .footer-note { font-size: 12px; opacity: .85; }
+.footer-devs { font-size: 12.5px; }
+.footer-devs b { color: var(--brand); font-weight: 600; }
 @media (min-width: 760px) {
   .footer-inner { grid-template-columns: 1.4fr 1fr 1fr 1fr; padding-top: 48px; }
   .footer-brand { grid-column: auto; }
-  .footer-bottom { flex-direction: row; justify-content: space-between; }
+  .footer-bottom { flex-direction: row; flex-wrap: wrap; justify-content: space-between; gap: 6px 18px; }
 }
 
 .legal { max-width: 820px; padding-top: 18px; padding-bottom: 20px; }
@@ -1023,3 +1025,39 @@ a.link { color: var(--brand); font-weight: 600; text-decoration: underline; }
 .hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; opacity: 0; }
 .mod-banner { display: flex; flex-direction: column; gap: 2px; padding: 10px 16px; background: var(--danger); color: #fff; font-size: 13.5px; text-align: center; }
 .mod-banner a { color: #fff; text-decoration: underline; font-weight: 700; }
+
+/* ---------- Opciones para elegir (frutas, toppings, sabores…) ---------- */
+.opt-info { background: var(--surface-2); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.opt-info h3 { margin: 0; font-size: 15px; }
+.opt-info div { display: flex; flex-direction: column; gap: 2px; font-size: 13.5px; }
+.opt-info span { color: var(--muted); }
+.opt-groups { display: flex; flex-direction: column; gap: 12px; }
+.opt-group { border: 1.5px solid var(--line); border-radius: 14px; padding: 10px 12px 12px; margin: 0; transition: border-color .15s, box-shadow .15s; }
+.opt-group legend { font-weight: 700; font-size: 14px; padding: 0 6px; margin-left: -6px; display: flex; gap: 8px; align-items: center; }
+.opt-count { font-weight: 600; font-size: 12px; color: var(--muted); background: var(--surface-2); padding: 2px 8px; border-radius: 99px; }
+.opt-group.done .opt-count { color: var(--ok); background: var(--ok-soft); }
+.opt-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt-chips label { cursor: pointer; }
+.opt-chips input { position: absolute; opacity: 0; pointer-events: none; }
+.opt-chips span { display: inline-flex; align-items: center; padding: 9px 13px; border-radius: 99px; border: 1.5px solid var(--line); font-weight: 600; font-size: 13.5px; background: var(--surface); transition: .15s; }
+.opt-chips input:checked + span { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); }
+.opt-chips input:checked + span::before { content: '✓ '; white-space: pre; }
+.opt-chips input:focus-visible + span { box-shadow: 0 0 0 3px var(--brand-soft); }
+.order-opts { display: flex; flex-direction: column; gap: 2px; padding: 9px 12px; border-radius: 12px; background: var(--brand-soft); font-size: 13.5px; text-align: left; }
+.order-opts b { color: var(--brand); }
+.opt-editor { display: flex; flex-direction: column; gap: 10px; }
+.opt-editor:empty { display: none; }
+.opt-row { border: 1.5px dashed var(--line); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.opt-row-head { display: flex; gap: 8px; align-items: center; }
+.opt-row-head > input { flex: 1; min-width: 0; }
+.field .opt-pick { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+.field .opt-pick input { width: 64px; padding: 10px; }
+#opt-add { align-self: flex-start; }
+.prep { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; margin-bottom: 14px; }
+.prep summary { font-weight: 700; cursor: pointer; }
+.prep-item { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.prep-row { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.prep-row > span { color: var(--muted); font-weight: 600; }
+.prep-row div { display: flex; flex-wrap: wrap; gap: 6px; }
+.prep-row i { font-style: normal; background: var(--surface-2); border-radius: 99px; padding: 4px 10px; }
+.prep-row i b { color: var(--brand); margin-left: 2px; }

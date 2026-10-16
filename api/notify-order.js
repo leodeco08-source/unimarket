@@ -52,6 +52,7 @@ module.exports = async (req, res) => {
 
     const rows = [
       ['Producto', `${order.qty}× ${order.productTitle}`],
+      order.options ? ['Opciones', order.options] : null,
       ['Total', money(order.total)],
       ['Pago', order.payment || '—'],
       ['Entrega', order.spot || 'Por acordar'],

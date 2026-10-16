@@ -14,6 +14,7 @@
   'use strict';
   const C = window.APP_CONFIG;
   const fb = C.firebase || {};
+  const PRESETS = window.HIUSU_DEMOS || {};
   let forceDemo = false;
   try { forceDemo = new URLSearchParams(location.search).has('demo'); } catch {}
   const configured = !forceDemo && !!(fb.apiKey && !/^TU_/.test(fb.apiKey) && window.firebase);
@@ -208,6 +209,23 @@
       get() { try { return JSON.parse(sessionStorage.getItem(K.s)); } catch { return null; } },
       set(v) { try { v ? sessionStorage.setItem(K.s, JSON.stringify(v)) : sessionStorage.removeItem(K.s); } catch {} },
     };
+
+    // Demos con datos listos para enseñar (?demo=estrella). Se cargan la primera vez o con &reset.
+    let preset = '';
+    try {
+      const q = new URLSearchParams(location.search);
+      preset = PRESETS[q.get('demo')] ? q.get('demo') : '';
+      if (preset && (localStorage.getItem('cm_demo_preset') !== preset || q.has('reset'))) {
+        Object.keys(localStorage).filter(k => /^(cm_|hiusu_)/.test(k)).forEach(k => localStorage.removeItem(k));
+        localStorage.setItem('cm_demo_preset', preset);
+        ss.set(PRESETS[preset].session);
+        preset = { name: preset, fresh: true };
+        if (!location.hash || location.hash === '#/') history.replaceState(null, '', location.pathname + location.search + PRESETS[preset.name].hash);
+      } else if (preset) preset = { name: preset, fresh: false };
+      // Pestaña de comprador (&as=comprador): entra sin cuenta, como cualquier visitante.
+      if (preset && q.get('as') === 'comprador') { preset.buyer = true; ss.set(null); }
+      if (preset && q.get('as') === 'vendedor') ss.set(PRESETS[preset.name].session);
+    } catch {}
     const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
     const wait = (v, ms = 200) => new Promise(r => setTimeout(() => r(v), ms));
     const authCbs = new Set();
@@ -257,12 +275,15 @@
         thumb: '', active: true, createdAt: t - hoursAgo * H, updatedAt: t - hoursAgo * H,
       })));
     })();
+    if (preset && preset.fresh) PRESETS[preset.name].seed({ ls, K, newId });
 
     const products = () => ls.get(K.p, []);
     const orders = () => ls.get(K.o, []);
 
     return {
       mode: 'demo',
+      demoPreset: preset ? preset.name : '',
+      demoBuyer: !!(preset && preset.buyer),
       onAuth(cb) { authCbs.add(cb); setTimeout(() => cb(session), 0); return () => authCbs.delete(cb); },
       async loginAnonymous() {
         if (session) return session;
@@ -377,9 +398,15 @@
   const int = (v, min = 0, max = 1e6) => Math.round(num(v, min, max));
   const ms = v => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : 0);
   // Solo imágenes https o data:image (nunca javascript: ni otros esquemas).
-  const imgUrl = v => (typeof v === 'string' && (/^https:\/\/[^\s"'<>]+$/i.test(v) || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v)) ? v : '');
+  const imgUrl = v => (typeof v === 'string' && (/^https:\/\/[^\s"'<>]+$/i.test(v) || /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v)
+    || /^assets\/demo\/[\w-]+\.(jpe?g|png|webp)$/.test(v)) ? v : '');
   const strList = (v, max, len) => (Array.isArray(v) ? v.slice(0, max).map(x => str(x, len)).filter(Boolean) : []);
   const STATUSES = ['pendiente', 'aceptado', 'entregado', 'rechazado', 'cancelado'];
+  // Opciones que el comprador elige (ej. "Frutas: elige 2"). Máximo 4 grupos de 15 opciones.
+  const cleanOptions = v => (Array.isArray(v) ? v.slice(0, 4) : []).map(g => {
+    const choices = [...new Set(strList(g && g.choices, 15, 30).map(x => x.trim()).filter(Boolean))];
+    return { name: str(g && g.name, 30).trim(), pick: Math.min(choices.length, int(g && g.pick, 1, 10)) || 1, choices };
+  }).filter(g => g.name && g.choices.length);
 
   function cleanProduct(p) {
     if (!p || !ID_RE.test(String(p.id || ''))) return null;
@@ -391,7 +418,7 @@
       spot: str(p.spot, 60), schedule: str(p.schedule, 60), phone: str(p.phone, 20),
       payments: strList(p.payments, 4, 20), active: p.active !== false,
       thumb: imgUrl(p.thumb), images: (Array.isArray(p.images) ? p.images.slice(0, 4).map(imgUrl).filter(Boolean) : []),
-      sold: int(p.sold, 0, 1e7),
+      sold: int(p.sold, 0, 1e7), options: cleanOptions(p.options),
       createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
     };
   }
@@ -408,7 +435,7 @@
       sellerId: str(o.sellerId, 128), sellerName: str(o.sellerName, 60), sellerPhone: str(o.sellerPhone, 20).replace(/[^\d+]/g, ''),
       buyerId: str(o.buyerId, 128), buyerName: str(o.buyerName, 60), buyerEmail: str(o.buyerEmail, 120), buyerPhone: str(o.buyerPhone, 20).replace(/[^\d+]/g, ''),
       buyerCode: str(o.buyerCode, 20), guest: o.guest === true, spot: str(o.spot, 60), payment: o.payment === 'Transferencia' ? 'Transferencia' : 'Efectivo',
-      note: str(o.note, 300), status: STATUSES.includes(o.status) ? o.status : 'pendiente', mode: o.mode === 'preorden' ? 'preorden' : 'inmediato',
+      note: str(o.note, 300), options: str(o.options, 300), status: STATUSES.includes(o.status) ? o.status : 'pendiente', mode: o.mode === 'preorden' ? 'preorden' : 'inmediato',
       pickupAt: ms(o.pickupAt) || null, transfer: cleanTransfer(o.transfer), transferInfo: str(o.transferInfo, 400),
       createdAt: ms(o.createdAt), updatedAt: ms(o.updatedAt),
     };
